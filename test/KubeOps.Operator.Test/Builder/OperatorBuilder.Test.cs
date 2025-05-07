@@ -153,8 +153,8 @@ public class OperatorBuilderTest
 
     private class TestFinalizer : IEntityFinalizer<V1OperatorIntegrationTestEntity>
     {
-        public Task FinalizeAsync(V1OperatorIntegrationTestEntity entity, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+        public Task<V1OperatorIntegrationTestEntity> FinalizeAsync(V1OperatorIntegrationTestEntity entity, CancellationToken cancellationToken) =>
+            Task.FromResult(entity);
     }
 
     private class TestLabelSelector : IEntityLabelSelector<V1OperatorIntegrationTestEntity>

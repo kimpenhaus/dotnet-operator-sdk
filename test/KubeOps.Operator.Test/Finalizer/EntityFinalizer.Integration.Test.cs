@@ -232,19 +232,19 @@ public class EntityFinalizerIntegrationTest : IntegrationTestBase
 
     private class FirstFinalizer(InvocationCounter<V1OperatorIntegrationTestEntity> svc) : IEntityFinalizer<V1OperatorIntegrationTestEntity>
     {
-        public Task FinalizeAsync(V1OperatorIntegrationTestEntity entity, CancellationToken cancellationToken)
+        public Task<V1OperatorIntegrationTestEntity> FinalizeAsync(V1OperatorIntegrationTestEntity entity, CancellationToken cancellationToken)
         {
             svc.Invocation(entity);
-            return Task.CompletedTask;
+            return Task.FromResult(entity);
         }
     }
 
     private class SecondFinalizer(InvocationCounter<V1OperatorIntegrationTestEntity> svc) : IEntityFinalizer<V1OperatorIntegrationTestEntity>
     {
-        public Task FinalizeAsync(V1OperatorIntegrationTestEntity entity, CancellationToken cancellationToken)
+        public Task<V1OperatorIntegrationTestEntity> FinalizeAsync(V1OperatorIntegrationTestEntity entity, CancellationToken cancellationToken)
         {
             svc.Invocation(entity);
-            return Task.CompletedTask;
+            return Task.FromResult(entity);
         }
     }
 }

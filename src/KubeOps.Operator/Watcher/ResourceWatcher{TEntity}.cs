@@ -345,7 +345,7 @@ internal class ResourceWatcher<TEntity>(
             return;
         }
 
-        await finalizer.FinalizeAsync(entity, cancellationToken);
+        entity = await finalizer.FinalizeAsync(entity, cancellationToken);
         entity.RemoveFinalizer(identifier);
         await client.UpdateAsync(entity, cancellationToken);
         logger.LogInformation(
