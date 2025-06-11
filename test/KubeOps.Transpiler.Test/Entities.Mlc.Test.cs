@@ -7,7 +7,7 @@ using KubeOps.Abstractions.Entities.Attributes;
 
 namespace KubeOps.Transpiler.Test;
 
-public class EntitiesMlcTest(MlcProvider provider) : TranspilerTestBase(provider)
+public sealed class EntitiesMlcTest : TranspilerTestBase
 {
     [Theory]
     [InlineData(typeof(NamespaceEntity), "Namespaced", "namespaceentity", "namespaceentities", "testing.dev/v1")]
@@ -19,7 +19,7 @@ public class EntitiesMlcTest(MlcProvider provider) : TranspilerTestBase(provider
         string plural,
         string groupVersion)
     {
-        var (meta, scope) = _mlc.ToEntityMetadata(entityType);
+        var (meta, scope) = entityType.ToEntityMetadata();
 
         scope.Should().Be(expectedScope);
         meta.SingularName.Should().Be(singular);
@@ -31,12 +31,12 @@ public class EntitiesMlcTest(MlcProvider provider) : TranspilerTestBase(provider
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "NamespaceEntity",
         PluralName = "NamespaceEntities")]
-    public class NamespaceEntity : CustomKubernetesEntity;
+    private sealed class NamespaceEntity : CustomKubernetesEntity;
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "ClusterEntity",
         PluralName = "clusterentities")]
     [EntityScope(EntityScope.Cluster)]
-    public class ClusterEntity : CustomKubernetesEntity;
+    private sealed class ClusterEntity : CustomKubernetesEntity;
 
     #endregion
 }

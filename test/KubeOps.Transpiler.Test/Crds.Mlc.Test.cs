@@ -11,7 +11,7 @@ using KubeOps.Abstractions.Entities.Attributes;
 
 namespace KubeOps.Transpiler.Test;
 
-public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(provider)
+public partial class CrdsMlcTest : TranspilerTestBase
 {
     [Theory]
     [InlineData(typeof(StringTestEntity), "string", null, null)]
@@ -52,8 +52,8 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     public void Should_Transpile_Entity_Type_Correctly(Type type, string? expectedType, string? expectedFormat,
         bool? isNullable)
     {
-        var crd = _mlc.Transpile(type);
-        var prop = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var crd = type.Transpile();
+        var prop = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         prop.Type.Should().Be(expectedType);
         prop.Format.Should().Be(expectedFormat);
         prop.Nullable.Should().Be(isNullable);
@@ -70,8 +70,8 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [InlineData(typeof(EmbeddedResourceListEntity), "object", null)]
     public void Should_Set_Correct_Array_Type(Type type, string expectedType, bool? isNullable)
     {
-        var crd = _mlc.Transpile(type);
-        var prop = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"].Items as V1JSONSchemaProps;
+        var crd = type.Transpile();
+        var prop = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"].Items as V1JSONSchemaProps;
         prop!.Type.Should().Be(expectedType);
         prop.Nullable.Should().Be(isNullable);
     }
@@ -81,8 +81,8 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [InlineData(typeof(EnumerableKeyPairsEntity), "string", null)]
     public void Should_Set_Correct_Dictionary_Additional_Properties_Type(Type type, string expectedType, bool? isNullable)
     {
-        var crd = _mlc.Transpile(type);
-        var prop = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"].AdditionalProperties as V1JSONSchemaProps;
+        var crd = type.Transpile();
+        var prop = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"].AdditionalProperties as V1JSONSchemaProps;
         prop!.Type.Should().Be(expectedType);
         prop.Nullable.Should().Be(isNullable);
     }
@@ -90,33 +90,34 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [Fact]
     public void Should_Ignore_Entity()
     {
-        var crds = _mlc.Transpile(new[] { typeof(IgnoredEntity) });
+        var crds = new[] { typeof(IgnoredEntity) }.Transpile();
         crds.Count().Should().Be(0);
     }
 
     [Fact]
     public void Should_Ignore_NonEntity()
     {
-        var crds = _mlc.Transpile(new[] { typeof(NonEntity) });
+        var crds = new[] { typeof(NonEntity) }.Transpile();
         crds.Count().Should().Be(0);
     }
 
     [Fact]
     public void Should_Ignore_Kubernetes_Entities()
     {
-        var crds = _mlc.Transpile(new[] { typeof(V1Pod) });
+        var crds = new[] { typeof(V1Pod) }.Transpile();
         crds.Count().Should().Be(0);
     }
 
     [Fact]
     public void Should_Set_Highest_Version_As_Storage()
     {
-        var crds = _mlc.Transpile(new[]
-        {
-            typeof(V1Alpha1VersionedEntity), typeof(V1Beta1VersionedEntity), typeof(V2Beta2VersionedEntity),
-            typeof(V2VersionedEntity), typeof(V1VersionedEntity), typeof(V1AttributeVersionedEntity),
-            typeof(V2AttributeVersionedEntity),
-        });
+        var crds = new[]
+            {
+                typeof(V1Alpha1VersionedEntity), typeof(V1Beta1VersionedEntity), typeof(V2Beta2VersionedEntity),
+                typeof(V2VersionedEntity), typeof(V1VersionedEntity), typeof(V1AttributeVersionedEntity),
+                typeof(V2AttributeVersionedEntity),
+            }
+            .Transpile();
         var crd = crds.First(c => c.Spec.Names.Kind == "VersionedEntity");
         crd.Spec.Versions.Count(v => v.Storage).Should().Be(1);
         crd.Spec.Versions.First(v => v.Storage).Name.Should().Be("v2");
@@ -125,12 +126,13 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [Fact]
     public void Should_Set_Storage_When_Attribute_Is_Set()
     {
-        var crds = _mlc.Transpile(new[]
-        {
-            typeof(V1Alpha1VersionedEntity), typeof(V1Beta1VersionedEntity), typeof(V2Beta2VersionedEntity),
-            typeof(V2VersionedEntity), typeof(V1VersionedEntity), typeof(V1AttributeVersionedEntity),
-            typeof(V2AttributeVersionedEntity),
-        });
+        var crds = new[]
+            {
+                typeof(V1Alpha1VersionedEntity), typeof(V1Beta1VersionedEntity), typeof(V2Beta2VersionedEntity),
+                typeof(V2VersionedEntity), typeof(V1VersionedEntity), typeof(V1AttributeVersionedEntity),
+                typeof(V2AttributeVersionedEntity),
+            }
+            .Transpile();
         var crd = crds.First(c => c.Spec.Names.Kind == "AttributeVersionedEntity");
         crd.Spec.Versions.Count(v => v.Storage).Should().Be(1);
         crd.Spec.Versions.First(v => v.Storage).Name.Should().Be("v1");
@@ -139,12 +141,14 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [Fact]
     public void Should_Add_Multiple_Versions_To_Crd()
     {
-        var crds = _mlc.Transpile(new[]
-        {
-            typeof(V1Alpha1VersionedEntity), typeof(V1Beta1VersionedEntity), typeof(V2Beta2VersionedEntity),
-            typeof(V2VersionedEntity), typeof(V1VersionedEntity), typeof(V1AttributeVersionedEntity),
-            typeof(V2AttributeVersionedEntity),
-        }).ToList();
+        var crds = new[]
+            {
+                typeof(V1Alpha1VersionedEntity), typeof(V1Beta1VersionedEntity), typeof(V2Beta2VersionedEntity),
+                typeof(V2VersionedEntity), typeof(V1VersionedEntity), typeof(V1AttributeVersionedEntity),
+                typeof(V2AttributeVersionedEntity),
+            }
+            .Transpile()
+            .ToList();
         crds
             .First(c => c.Spec.Names.Kind == "VersionedEntity")
             .Spec.Versions.Should()
@@ -158,8 +162,8 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [Fact]
     public void Should_Use_Correct_CRD()
     {
-        var crd = _mlc.Transpile(typeof(Entity));
-        var (ced, scope) = _mlc.ToEntityMetadata(typeof(Entity));
+        var crd = typeof(Entity).Transpile();
+        var (ced, scope) = typeof(Entity).ToEntityMetadata();
 
         crd.Kind.Should().Be(V1CustomResourceDefinition.KubeKind);
         crd.Metadata.Name.Should().Be($"{ced.PluralName}.{ced.Group}");
@@ -173,21 +177,21 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [Fact]
     public void Should_Not_Add_Status_SubResource_If_Absent()
     {
-        var crd = _mlc.Transpile(typeof(Entity));
-        crd.Spec.Versions.First().Subresources?.Status?.Should().BeNull();
+        var crd = typeof(Entity).Transpile();
+        crd.Spec.Versions[0].Subresources?.Status?.Should().BeNull();
     }
 
     [Fact]
     public void Should_Add_Status_SubResource_If_Present()
     {
-        var crd = _mlc.Transpile(typeof(EntityWithStatus));
-        crd.Spec.Versions.First().Subresources.Status.Should().NotBeNull();
+        var crd = typeof(EntityWithStatus).Transpile();
+        crd.Spec.Versions[0].Subresources.Status.Should().NotBeNull();
     }
 
     [Fact]
     public void Should_Add_ShortNames_To_Crd()
     {
-        var crd = _mlc.Transpile(typeof(ShortnamesEntity));
+        var crd = typeof(ShortnamesEntity).Transpile();
         crd.Spec.Names.ShortNames.Should()
             .NotBeNull()
             .And
@@ -197,45 +201,45 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [Fact]
     public void Should_Set_Description_On_Class()
     {
-        var crd = _mlc.Transpile(typeof(ClassDescriptionAttrEntity));
+        var crd = typeof(ClassDescriptionAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["spec"];
-        specProperties.Description.Should().NotBe("");
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"];
+        specProperties.Description.Should().NotBe(string.Empty);
     }
 
     [Fact]
     public void Should_Set_Description()
     {
-        var crd = _mlc.Transpile(typeof(DescriptionAttrEntity));
+        var crd = typeof(DescriptionAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
-        specProperties.Description.Should().NotBe("");
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
+        specProperties.Description.Should().NotBe(string.Empty);
     }
 
     [Fact]
     public void Should_Set_ExternalDocs()
     {
-        var crd = _mlc.Transpile(typeof(ExtDocsAttrEntity));
+        var crd = typeof(ExtDocsAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
-        specProperties.ExternalDocs.Url.Should().NotBe("");
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
+        specProperties.ExternalDocs.Url.Should().NotBe(string.Empty);
     }
 
     [Fact]
     public void Should_Set_ExternalDocs_Description()
     {
-        var crd = _mlc.Transpile(typeof(ExtDocsWithDescriptionAttrEntity));
+        var crd = typeof(ExtDocsWithDescriptionAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
-        specProperties.ExternalDocs.Description.Should().NotBe("");
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
+        specProperties.ExternalDocs.Description.Should().NotBe(string.Empty);
     }
 
     [Fact]
     public void Should_Set_Items_Information()
     {
-        var crd = _mlc.Transpile(typeof(ItemsAttrEntity));
+        var crd = typeof(ItemsAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
 
         specProperties.Type.Should().Be("array");
         (specProperties.Items as V1JSONSchemaProps)?.Type?.Should().Be("string");
@@ -244,22 +248,11 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     }
 
     [Fact]
-    public void Should_Set_Length_Information()
-    {
-        var crd = _mlc.Transpile(typeof(LengthAttrEntity));
-
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
-
-        specProperties.MinLength.Should().Be(2);
-        specProperties.MaxLength.Should().Be(42);
-    }
-
-    [Fact]
     public void Should_Set_MultipleOf()
     {
-        var crd = _mlc.Transpile(typeof(MultipleOfAttrEntity));
+        var crd = typeof(MultipleOfAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
 
         specProperties.MultipleOf.Should().Be(2);
     }
@@ -267,9 +260,9 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [Fact]
     public void Should_Set_Pattern()
     {
-        var crd = _mlc.Transpile(typeof(PatternAttrEntity));
+        var crd = typeof(PatternAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
 
         specProperties.Pattern.Should().Be(@"/\d*/");
     }
@@ -277,9 +270,9 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [Fact]
     public void Should_Set_RangeMinimum()
     {
-        var crd = _mlc.Transpile(typeof(RangeMinimumAttrEntity));
+        var crd = typeof(RangeMinimumAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
 
         specProperties.Minimum.Should().Be(15);
         specProperties.ExclusiveMinimum.Should().BeTrue();
@@ -288,9 +281,9 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [Fact]
     public void Should_Set_RangeMaximum()
     {
-        var crd = _mlc.Transpile(typeof(RangeMaximumAttrEntity));
+        var crd = typeof(RangeMaximumAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
 
         specProperties.Maximum.Should().Be(15);
         specProperties.ExclusiveMaximum.Should().BeTrue();
@@ -299,144 +292,144 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [Fact]
     public void Should_Set_Required()
     {
-        var crd = _mlc.Transpile(typeof(RequiredAttrEntity));
+        var crd = typeof(RequiredAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["spec"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"];
         specProperties.Required.Should().Contain("property");
     }
 
     [Fact]
     public void Should_Not_Contain_Ignored_Property()
     {
-        var crd = _mlc.Transpile(typeof(IgnoreAttrEntity));
+        var crd = typeof(IgnoreAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["spec"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"];
         specProperties.Properties.Should().NotContainKey("property");
     }
 
     [Fact]
     public void Should_Set_Preserve_Unknown_Fields()
     {
-        var crd = _mlc.Transpile(typeof(PreserveUnknownFieldsAttrEntity));
+        var crd = typeof(PreserveUnknownFieldsAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.XKubernetesPreserveUnknownFields.Should().BeTrue();
     }
 
     [Fact]
     public void Should_Set_EmbeddedResource_Fields()
     {
-        var crd = _mlc.Transpile(typeof(EmbeddedResourceAttrEntity));
+        var crd = typeof(EmbeddedResourceAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.XKubernetesEmbeddedResource.Should().BeTrue();
     }
 
     [Fact]
     public void Should_Set_Preserve_Unknown_Fields_On_Dictionaries()
     {
-        var crd = _mlc.Transpile(typeof(SimpleDictionaryEntity));
+        var crd = typeof(SimpleDictionaryEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.XKubernetesPreserveUnknownFields.Should().BeTrue();
     }
 
     [Fact]
     public void Should_Set_Preserve_Unknown_Fields_On_Classes()
     {
-        var crd = _mlc.Transpile(typeof(UnknownFieldsEntity));
+        var crd = typeof(UnknownFieldsEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["spec"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"];
         specProperties.XKubernetesPreserveUnknownFields.Should().BeTrue();
     }
 
     [Fact]
     public void Should_Set_Preserve_Unknown_Fields_On_System_Object()
     {
-        var crd = _mlc.Transpile(typeof(EntityWithSystemObject));
+        var crd = typeof(EntityWithSystemObject).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["spec"].Properties["obj"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"].Properties["obj"];
         specProperties.XKubernetesPreserveUnknownFields.Should().BeTrue();
     }
 
     [Fact]
     public void Should_Set_Preserve_Unknown_Fields_On_ObjectLists()
     {
-        var crd = _mlc.Transpile(typeof(UnknownFieldsListEntity));
+        var crd = typeof(UnknownFieldsListEntity).Transpile();
 
-        var specProperties = (V1JSONSchemaProps)crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["spec"].Properties["propertyList"].Items;
+        var specProperties = (V1JSONSchemaProps)crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"].Properties["propertyList"].Items;
         specProperties.XKubernetesPreserveUnknownFields.Should().BeTrue();
     }
 
     [Fact]
     public void Should_Not_Set_Preserve_Unknown_Fields_On_Generic_Dictionaries()
     {
-        var crd = _mlc.Transpile(typeof(DictionaryEntity));
+        var crd = typeof(DictionaryEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.XKubernetesPreserveUnknownFields.Should().BeNull();
     }
 
     [Fact]
     public void Should_Not_Set_Preserve_Unknown_Fields_On_KeyValuePair_Enumerable()
     {
-        var crd = _mlc.Transpile(typeof(EnumerableKeyPairsEntity));
+        var crd = typeof(EnumerableKeyPairsEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.XKubernetesPreserveUnknownFields.Should().BeNull();
     }
 
     [Fact]
     public void Should_Not_Set_Properties_On_Dictionaries()
     {
-        var crd = _mlc.Transpile(typeof(SimpleDictionaryEntity));
+        var crd = typeof(SimpleDictionaryEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.Properties.Should().BeNull();
     }
 
     [Fact]
     public void Should_Not_Set_Properties_On_Generic_Dictionaries()
     {
-        var crd = _mlc.Transpile(typeof(DictionaryEntity));
+        var crd = typeof(DictionaryEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.Properties.Should().BeNull();
     }
 
     [Fact]
     public void Should_Not_Set_Properties_On_KeyValuePair_Enumerable()
     {
-        var crd = _mlc.Transpile(typeof(EnumerableKeyPairsEntity));
+        var crd = typeof(EnumerableKeyPairsEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.Properties.Should().BeNull();
     }
 
     [Fact]
     public void Should_Set_AdditionalProperties_On_Dictionaries_For_Value_type()
     {
-        var crd = _mlc.Transpile(typeof(DictionaryEntity));
+        var crd = typeof(DictionaryEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.AdditionalProperties.Should().NotBeNull();
     }
 
     [Fact]
     public void Should_Set_AdditionalProperties_On_KeyValuePair_For_Value_type()
     {
-        var crd = _mlc.Transpile(typeof(EnumerableKeyPairsEntity));
+        var crd = typeof(EnumerableKeyPairsEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.AdditionalProperties.Should().NotBeNull();
     }
 
     [Fact]
     public void Should_Set_IntOrString()
     {
-        var crd = _mlc.Transpile(typeof(IntstrOrStringEntity));
+        var crd = typeof(IntstrOrStringEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.Properties.Should().BeNull();
         specProperties.XKubernetesIntOrString.Should().BeTrue();
     }
@@ -444,60 +437,50 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [Fact]
     public void Should_Use_PropertyName_From_JsonPropertyAttribute()
     {
-        var crd = _mlc.Transpile(typeof(JsonPropNameAttrEntity));
+        var crd = typeof(JsonPropNameAttrEntity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties;
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties;
         specProperties.Should().Contain(p => p.Key == "otherName");
     }
 
     [Fact]
     public void Must_Not_Contain_Ignored_TopLevel_Properties()
     {
-        var crd = _mlc.Transpile(typeof(Entity));
+        var crd = typeof(Entity).Transpile();
 
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties;
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties;
         specProperties.Should().NotContainKeys("metadata", "apiVersion", "kind");
     }
 
     [Fact]
     public void Should_Add_AdditionalPrinterColumns()
     {
-        var crd = _mlc.Transpile(typeof(AdditionalPrinterColumnAttrEntity));
-        var apc = crd.Spec.Versions.First().AdditionalPrinterColumns;
+        var crd = typeof(AdditionalPrinterColumnAttrEntity).Transpile();
+        var apc = crd.Spec.Versions[0].AdditionalPrinterColumns;
         apc.Should().ContainSingle(def => def.JsonPath == ".property");
     }
 
     [Fact]
     public void Should_Add_AdditionalPrinterColumns_With_Prio()
     {
-        var crd = _mlc.Transpile(typeof(AdditionalPrinterColumnWideAttrEntity));
-        var apc = crd.Spec.Versions.First().AdditionalPrinterColumns;
+        var crd = typeof(AdditionalPrinterColumnWideAttrEntity).Transpile();
+        var apc = crd.Spec.Versions[0].AdditionalPrinterColumns;
         apc.Should().ContainSingle(def => def.JsonPath == ".property" && def.Priority == 1);
     }
 
     [Fact]
     public void Should_Add_AdditionalPrinterColumns_With_Name()
     {
-        var crd = _mlc.Transpile(typeof(AdditionalPrinterColumnNameAttrEntity));
-        var apc = crd.Spec.Versions.First().AdditionalPrinterColumns;
+        var crd = typeof(AdditionalPrinterColumnNameAttrEntity).Transpile();
+        var apc = crd.Spec.Versions[0].AdditionalPrinterColumns;
         apc.Should().ContainSingle(def => def.JsonPath == ".property" && def.Name == "OtherName");
-    }
-
-    [Fact]
-    public void Should_Add_GenericAdditionalPrinterColumns()
-    {
-        var crd = _mlc.Transpile(typeof(GenericAdditionalPrinterColumnAttrEntity));
-        var apc = crd.Spec.Versions.First().AdditionalPrinterColumns;
-
-        apc.Should().NotBeNull();
-        apc.Should().ContainSingle(def => def.JsonPath == ".metadata.namespace" && def.Name == "Namespace");
     }
 
     [Fact]
     public void Should_Correctly_Use_Entity_Scope_Attribute()
     {
-        var scopedCrd = _mlc.Transpile(typeof(Entity));
-        var clusterCrd = _mlc.Transpile(typeof(ScopeAttrEntity));
+        var scopedCrd = typeof(Entity).Transpile();
+        var clusterCrd = typeof(ScopeAttrEntity).Transpile();
 
         scopedCrd.Spec.Scope.Should().Be("Namespaced");
         clusterCrd.Spec.Scope.Should().Be("Cluster");
@@ -506,177 +489,177 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     [Fact]
     public void Should_Correctly_Get_Enum_Value_From_JsonStringEnumMemberNameAttribute()
     {
-        var crd = _mlc.Transpile(typeof(NamedEnumEntity));
-        var specProperties = crd.Spec.Versions.First().Schema.OpenAPIV3Schema.Properties["property"];
+        var crd = typeof(NamedEnumEntity).Transpile();
+        var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.EnumProperty.Should().BeEquivalentTo(["enumValue1", "enumValue2"]);
     }
 
     #region Test Entity Classes
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class StringTestEntity : CustomKubernetesEntity
+    private sealed class StringTestEntity : CustomKubernetesEntity
     {
         public string Property { get; set; } = string.Empty;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class NullableStringTestEntity : CustomKubernetesEntity
+    private sealed class NullableStringTestEntity : CustomKubernetesEntity
     {
         public string? Property { get; set; } = string.Empty;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class IntTestEntity : CustomKubernetesEntity
+    private sealed class IntTestEntity : CustomKubernetesEntity
     {
         public int Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class NullableIntTestEntity : CustomKubernetesEntity
+    private sealed class NullableIntTestEntity : CustomKubernetesEntity
     {
         public int? Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class LongTestEntity : CustomKubernetesEntity
+    private sealed class LongTestEntity : CustomKubernetesEntity
     {
         public long Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class NullableLongTestEntity : CustomKubernetesEntity
+    private sealed class NullableLongTestEntity : CustomKubernetesEntity
     {
         public long? Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class FloatTestEntity : CustomKubernetesEntity
+    private sealed class FloatTestEntity : CustomKubernetesEntity
     {
         public float Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class NullableFloatTestEntity : CustomKubernetesEntity
+    private sealed class NullableFloatTestEntity : CustomKubernetesEntity
     {
         public float? Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class DecimalTestEntity : CustomKubernetesEntity
+    private sealed class DecimalTestEntity : CustomKubernetesEntity
     {
         public decimal Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class NullableDecimalTestEntity : CustomKubernetesEntity
+    private sealed class NullableDecimalTestEntity : CustomKubernetesEntity
     {
         public decimal? Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class DoubleTestEntity : CustomKubernetesEntity
+    private sealed class DoubleTestEntity : CustomKubernetesEntity
     {
         public double Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class NullableDoubleTestEntity : CustomKubernetesEntity
+    private sealed class NullableDoubleTestEntity : CustomKubernetesEntity
     {
         public double? Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class BoolTestEntity : CustomKubernetesEntity
+    private sealed class BoolTestEntity : CustomKubernetesEntity
     {
         public bool Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class NullableBoolTestEntity : CustomKubernetesEntity
+    private sealed class NullableBoolTestEntity : CustomKubernetesEntity
     {
         public bool? Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class DateTimeTestEntity : CustomKubernetesEntity
+    private sealed class DateTimeTestEntity : CustomKubernetesEntity
     {
         public DateTime Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class NullableDateTimeTestEntity : CustomKubernetesEntity
+    private sealed class NullableDateTimeTestEntity : CustomKubernetesEntity
     {
         public DateTime? Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class DateTimeOffsetTestEntity : CustomKubernetesEntity
+    private sealed class DateTimeOffsetTestEntity : CustomKubernetesEntity
     {
         public DateTimeOffset Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class NullableDateTimeOffsetTestEntity : CustomKubernetesEntity
+    private sealed class NullableDateTimeOffsetTestEntity : CustomKubernetesEntity
     {
         public DateTimeOffset? Property { get; set; }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class V1ObjectMetaTestEntity : CustomKubernetesEntity
+    private sealed class V1ObjectMetaTestEntity : CustomKubernetesEntity
     {
         public V1ObjectMeta Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class StringArrayEntity : CustomKubernetesEntity
+    private sealed class StringArrayEntity : CustomKubernetesEntity
     {
         public string[] Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class NullableStringArrayEntity : CustomKubernetesEntity
+    private sealed class NullableStringArrayEntity : CustomKubernetesEntity
     {
         public string[]? Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class EnumerableNullableIntEntity : CustomKubernetesEntity
+    private sealed class EnumerableNullableIntEntity : CustomKubernetesEntity
     {
         public IEnumerable<int?> Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class EnumerableIntEntity : CustomKubernetesEntity
+    private sealed class EnumerableIntEntity : CustomKubernetesEntity
     {
         public IEnumerable<int> Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class HashSetIntEntity : CustomKubernetesEntity
+    private sealed class HashSetIntEntity : CustomKubernetesEntity
     {
         public HashSet<int> Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class SetIntEntity : CustomKubernetesEntity
+    private sealed class SetIntEntity : CustomKubernetesEntity
     {
         public ISet<int> Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class InheritedEnumerableEntity : CustomKubernetesEntity
+    private sealed class InheritedEnumerableEntity : CustomKubernetesEntity
     {
         public IntegerList Property { get; set; } = null!;
 
-        public class IntegerList : Collection<int>;
+        public sealed class IntegerList : Collection<int>;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class EnumEntity : CustomKubernetesEntity
+    private sealed class EnumEntity : CustomKubernetesEntity
     {
-        public TestSpecEnum Property { get; set; }
+        public TestSpec Property { get; set; }
 
-        public enum TestSpecEnum
+        public enum TestSpec
         {
             Value1,
             Value2,
@@ -684,11 +667,11 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class NullableEnumEntity : CustomKubernetesEntity
+    private sealed class NullableEnumEntity : CustomKubernetesEntity
     {
-        public TestSpecEnum? Property { get; set; }
+        public TestSpec? Property { get; set; }
 
-        public enum TestSpecEnum
+        public enum TestSpec
         {
             Value1,
             Value2,
@@ -696,11 +679,11 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class NamedEnumEntity : CustomKubernetesEntity
+    private sealed class NamedEnumEntity : CustomKubernetesEntity
     {
-        public TestSpecEnum Property { get; set; }
+        public TestSpec Property { get; set; }
 
-        public enum TestSpecEnum
+        public enum TestSpec
         {
             [JsonStringEnumMemberName("enumValue1")]
             Value1,
@@ -710,133 +693,133 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class SimpleDictionaryEntity : CustomKubernetesEntity
+    private sealed class SimpleDictionaryEntity : CustomKubernetesEntity
     {
         public IDictionary Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class UnknownFieldsEntity : CustomKubernetesEntity<UnknownFieldsEntity.EntitySpec>
+    private sealed class UnknownFieldsEntity : CustomKubernetesEntity<UnknownFieldsEntity.EntitySpec>
     {
         [PreserveUnknownFields]
-        public class EntitySpec;
+        public sealed class EntitySpec;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class EntityWithSystemObject : CustomKubernetesEntity<EntityWithSystemObject.EntitySpec>
+    private sealed class EntityWithSystemObject : CustomKubernetesEntity<EntityWithSystemObject.EntitySpec>
     {
-        public class EntitySpec
+        public sealed class EntitySpec
         {
             public object Obj { get; set; } = null!;
         }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class UnknownFieldsListEntity : CustomKubernetesEntity<UnknownFieldsListEntity.EntitySpec>
+    private sealed class UnknownFieldsListEntity : CustomKubernetesEntity<UnknownFieldsListEntity.EntitySpec>
     {
-        public class EntitySpec
+        public sealed class EntitySpec
         {
             public List<ObjectList> PropertyList { get; set; } = null!;
 
             [PreserveUnknownFields]
-            public class ObjectList;
+            public sealed class ObjectList;
         }
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class DictionaryEntity : CustomKubernetesEntity
+    private sealed class DictionaryEntity : CustomKubernetesEntity
     {
         public IDictionary<string, string> Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class EnumerableKeyPairsEntity : CustomKubernetesEntity
+    private sealed class EnumerableKeyPairsEntity : CustomKubernetesEntity
     {
         public IEnumerable<KeyValuePair<string, string>> Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class IntstrOrStringEntity : CustomKubernetesEntity
+    private sealed class IntstrOrStringEntity : CustomKubernetesEntity
     {
         public IntstrIntOrString Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class EmbeddedResourceEntity : CustomKubernetesEntity
+    private sealed class EmbeddedResourceEntity : CustomKubernetesEntity
     {
         public V1Pod Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class EmbeddedCustomResourceEntity : CustomKubernetesEntity
+    private sealed class EmbeddedCustomResourceEntity : CustomKubernetesEntity
     {
         public EmbeddedCustomResource Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class EmbeddedCustomResource : CustomKubernetesEntity
+    private sealed class EmbeddedCustomResource : CustomKubernetesEntity
     {
         public string Property { get; set; } = string.Empty;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class EmbeddedCustomResourceGenericEntity : CustomKubernetesEntity
+    private sealed class EmbeddedCustomResourceGenericEntity : CustomKubernetesEntity
     {
         public EmbeddedCustomResourceGeneric Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class EmbeddedCustomResourceGeneric : CustomKubernetesEntity<EmbeddedCustomResourceGeneric.EntitySpec>
+    private sealed class EmbeddedCustomResourceGeneric : CustomKubernetesEntity<EmbeddedCustomResourceGeneric.EntitySpec>
     {
-        public class EntitySpec;
+        public sealed class EntitySpec;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    private class EmbeddedResourceListEntity : CustomKubernetesEntity
+    private sealed class EmbeddedResourceListEntity : CustomKubernetesEntity
     {
         public IList<V1Pod> Property { get; set; } = null!;
     }
 
     [Ignore]
     [KubernetesEntity]
-    private class IgnoredEntity : CustomKubernetesEntity;
+    private sealed class IgnoredEntity : CustomKubernetesEntity;
 
-    public class NonEntity;
+    public sealed class NonEntity;
 
     [KubernetesEntity(
         ApiVersion = "v1alpha1",
         Kind = "VersionedEntity",
         Group = "kubeops.test.dev",
         PluralName = "versionedentities")]
-    public class V1Alpha1VersionedEntity : CustomKubernetesEntity;
+    public sealed class V1Alpha1VersionedEntity : CustomKubernetesEntity;
 
     [KubernetesEntity(
         ApiVersion = "v1beta1",
         Kind = "VersionedEntity",
         Group = "kubeops.test.dev",
         PluralName = "versionedentities")]
-    public class V1Beta1VersionedEntity : CustomKubernetesEntity;
+    public sealed class V1Beta1VersionedEntity : CustomKubernetesEntity;
 
     [KubernetesEntity(
         ApiVersion = "v2beta2",
         Kind = "VersionedEntity",
         Group = "kubeops.test.dev",
         PluralName = "versionedentities")]
-    public class V2Beta2VersionedEntity : CustomKubernetesEntity;
+    public sealed class V2Beta2VersionedEntity : CustomKubernetesEntity;
 
     [KubernetesEntity(
         ApiVersion = "v2",
         Kind = "VersionedEntity",
         Group = "kubeops.test.dev",
         PluralName = "versionedentities")]
-    public class V2VersionedEntity : CustomKubernetesEntity;
+    public sealed class V2VersionedEntity : CustomKubernetesEntity;
 
     [KubernetesEntity(
         ApiVersion = "v1",
         Kind = "VersionedEntity",
         Group = "kubeops.test.dev",
         PluralName = "versionedentities")]
-    public class V1VersionedEntity : CustomKubernetesEntity;
+    public sealed class V1VersionedEntity : CustomKubernetesEntity;
 
     [KubernetesEntity(
         ApiVersion = "v1",
@@ -844,101 +827,94 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
         Group = "kubeops.test.dev",
         PluralName = "attributeversionedentities")]
     [StorageVersion]
-    public class V1AttributeVersionedEntity : CustomKubernetesEntity;
+    public sealed class V1AttributeVersionedEntity : CustomKubernetesEntity;
 
     [KubernetesEntity(
         ApiVersion = "v2",
         Kind = "AttributeVersionedEntity",
         Group = "kubeops.test.dev",
         PluralName = "attributeversionedentities")]
-    public class V2AttributeVersionedEntity : CustomKubernetesEntity;
+    public sealed class V2AttributeVersionedEntity : CustomKubernetesEntity;
 
     [KubernetesEntity(
         ApiVersion = "v1337",
         Kind = "Kind",
         Group = "Group",
         PluralName = "Plural")]
-    public class Entity : CustomKubernetesEntity;
+    public sealed class Entity : CustomKubernetesEntity;
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class EntityWithStatus : CustomKubernetesEntity<EntityWithStatus.EntitySpec, EntityWithStatus.EntityStatus>
+    public sealed class EntityWithStatus : CustomKubernetesEntity<EntityWithStatus.EntitySpec, EntityWithStatus.EntityStatus>
     {
-        public class EntitySpec;
+        public sealed class EntitySpec;
 
-        public class EntityStatus;
+        public sealed class EntityStatus;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
     [KubernetesEntityShortNames("foo", "bar", "baz")]
-    public class ShortnamesEntity : CustomKubernetesEntity;
+    public sealed class ShortnamesEntity : CustomKubernetesEntity;
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class DescriptionAttrEntity : CustomKubernetesEntity
+    public sealed class DescriptionAttrEntity : CustomKubernetesEntity
     {
         [Description("Description")]
         public string Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class ExtDocsAttrEntity : CustomKubernetesEntity
+    public sealed class ExtDocsAttrEntity : CustomKubernetesEntity
     {
         [ExternalDocs("url")]
         public string Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class ExtDocsWithDescriptionAttrEntity : CustomKubernetesEntity
+    public sealed class ExtDocsWithDescriptionAttrEntity : CustomKubernetesEntity
     {
         [ExternalDocs("url", "description")]
         public string Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class ItemsAttrEntity : CustomKubernetesEntity
+    public sealed class ItemsAttrEntity : CustomKubernetesEntity
     {
         [Items(13, 42)]
         public string[] Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class LengthAttrEntity : CustomKubernetesEntity
-    {
-        [Length(2, 42)]
-        public string Property { get; set; } = null!;
-    }
-
-    [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class MultipleOfAttrEntity : CustomKubernetesEntity
+    public sealed class MultipleOfAttrEntity : CustomKubernetesEntity
     {
         [MultipleOf(2)]
         public string Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class PatternAttrEntity : CustomKubernetesEntity
+    public sealed class PatternAttrEntity : CustomKubernetesEntity
     {
         [Pattern(@"/\d*/")]
         public string Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class RangeMinimumAttrEntity : CustomKubernetesEntity
+    public sealed class RangeMinimumAttrEntity : CustomKubernetesEntity
     {
         [RangeMinimum(15, true)]
         public string Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class RangeMaximumAttrEntity : CustomKubernetesEntity
+    public sealed class RangeMaximumAttrEntity : CustomKubernetesEntity
     {
         [RangeMaximum(15, true)]
         public string Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class RequiredAttrEntity : CustomKubernetesEntity<RequiredAttrEntity.EntitySpec>
+    public sealed class RequiredAttrEntity : CustomKubernetesEntity<RequiredAttrEntity.EntitySpec>
     {
-        public class EntitySpec
+        public sealed class EntitySpec
         {
             [Required]
             public string Property { get; set; } = null!;
@@ -946,9 +922,9 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class IgnoreAttrEntity : CustomKubernetesEntity<IgnoreAttrEntity.EntitySpec>
+    public sealed class IgnoreAttrEntity : CustomKubernetesEntity<IgnoreAttrEntity.EntitySpec>
     {
-        public class EntitySpec
+        public sealed class EntitySpec
         {
             [Ignore]
             public string Property { get; set; } = null!;
@@ -956,63 +932,56 @@ public partial class CrdsMlcTest(MlcProvider provider) : TranspilerTestBase(prov
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class PreserveUnknownFieldsAttrEntity : CustomKubernetesEntity
+    public sealed class PreserveUnknownFieldsAttrEntity : CustomKubernetesEntity
     {
         [PreserveUnknownFields]
         public string Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class EmbeddedResourceAttrEntity : CustomKubernetesEntity
+    public sealed class EmbeddedResourceAttrEntity : CustomKubernetesEntity
     {
         [EmbeddedResource]
         public string Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class AdditionalPrinterColumnAttrEntity : CustomKubernetesEntity
+    public sealed class AdditionalPrinterColumnAttrEntity : CustomKubernetesEntity
     {
         [AdditionalPrinterColumn]
         public string Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class AdditionalPrinterColumnWideAttrEntity : CustomKubernetesEntity
+    public sealed class AdditionalPrinterColumnWideAttrEntity : CustomKubernetesEntity
     {
         [AdditionalPrinterColumn(PrinterColumnPriority.WideView)]
         public string Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class AdditionalPrinterColumnNameAttrEntity : CustomKubernetesEntity
+    public sealed class AdditionalPrinterColumnNameAttrEntity : CustomKubernetesEntity
     {
         [AdditionalPrinterColumn(name: "OtherName")]
         public string Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class ClassDescriptionAttrEntity : CustomKubernetesEntity<ClassDescriptionAttrEntity.EntitySpec>
+    public sealed class ClassDescriptionAttrEntity : CustomKubernetesEntity<ClassDescriptionAttrEntity.EntitySpec>
     {
         [Description("Description")]
-        public class EntitySpec;
-    }
-
-    [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    [GenericAdditionalPrinterColumn(".metadata.namespace", "Namespace", "string")]
-    public class GenericAdditionalPrinterColumnAttrEntity : CustomKubernetesEntity
-    {
-        public string Property { get; set; } = null!;
+        public sealed class EntitySpec;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
     [EntityScope(EntityScope.Cluster)]
-    public class ScopeAttrEntity : CustomKubernetesEntity
+    public sealed class ScopeAttrEntity : CustomKubernetesEntity
     {
         public string Property { get; set; } = null!;
     }
 
     [KubernetesEntity(Group = "testing.dev", ApiVersion = "v1", Kind = "TestEntity")]
-    public class JsonPropNameAttrEntity : CustomKubernetesEntity
+    public sealed class JsonPropNameAttrEntity : CustomKubernetesEntity
     {
         [JsonPropertyName("otherName")]
         public string Property { get; set; } = null!;

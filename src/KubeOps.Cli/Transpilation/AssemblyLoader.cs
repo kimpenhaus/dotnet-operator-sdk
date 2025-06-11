@@ -154,34 +154,35 @@ internal static partial class AssemblyLoader
                     e.attrs.All(a => a.AttributeType.Name != nameof(IgnoreAttribute)))
         .Select(e => e.t);
 
-    public static IEnumerable<CustomAttributeData> GetRbacAttributes(this MetadataLoadContext context) => context
-        .GetTypesToInspect().SelectMany(t => t.GetCustomAttributesData<GenericRbacAttribute>().Concat(t.GetCustomAttributesData<EntityRbacAttribute>()));
+    public static IEnumerable<RbacAttribute> GetRbacAttributes(this MetadataLoadContext context) => context
+        .GetTypesToInspect()
+        .SelectMany(t => t.GetCustomAttributes<GenericRbacAttribute>().Concat<RbacAttribute>(t.GetCustomAttributes<EntityRbacAttribute>()));
 
     public static IEnumerable<ValidationWebhook> GetValidatedEntities(this MetadataLoadContext context) => context
         .GetTypesToInspect()
         .Where(t => t.BaseType?.Name == typeof(ValidationWebhook<>).Name &&
                     t.BaseType?.Namespace == typeof(ValidationWebhook<>).Namespace)
         .Distinct()
-        .Select(t => new ValidationWebhook(t, context.ToEntityMetadata(t.BaseType!.GenericTypeArguments[0]).Metadata));
+        .Select(t => new ValidationWebhook(t, t.BaseType!.GenericTypeArguments[0].ToEntityMetadata().Metadata));
 
     public static IEnumerable<MutationWebhook> GetMutatedEntities(this MetadataLoadContext context) => context
         .GetTypesToInspect()
         .Where(t => t.BaseType?.Name == typeof(MutationWebhook<>).Name &&
                     t.BaseType?.Namespace == typeof(MutationWebhook<>).Namespace)
         .Distinct()
-        .Select(t => new MutationWebhook(t, context.ToEntityMetadata(t.BaseType!.GenericTypeArguments[0]).Metadata));
+        .Select(t => new MutationWebhook(t, t.BaseType!.GenericTypeArguments[0].ToEntityMetadata().Metadata));
 
     public static IEnumerable<EntityMetadata> GetConvertedEntities(this MetadataLoadContext context) => context
         .GetTypesToInspect()
         .Where(t => t.BaseType?.Name == typeof(ConversionWebhook<>).Name &&
                     t.BaseType?.Namespace == typeof(ConversionWebhook<>).Namespace)
         .Distinct()
-        .Select(t => context.ToEntityMetadata(t.BaseType!.GenericTypeArguments[0]).Metadata);
+        .Select(t => t.BaseType!.GenericTypeArguments[0].ToEntityMetadata().Metadata);
 
     private static IEnumerable<TypeInfo> GetTypesToInspect(this MetadataLoadContext context) => context
         .GetAssemblies()
         .SelectMany(a => a.DefinedTypes)
-        .Where(t => !t.IsInterface && !t.IsAbstract && !t.IsGenericType);
+        .Where(t => t is { IsInterface: false, IsAbstract: false, IsGenericType: false });
 
     [GeneratedRegex(".*")]
     private static partial Regex DefaultRegex();

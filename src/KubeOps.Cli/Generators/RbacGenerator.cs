@@ -10,17 +10,17 @@ using KubeOps.Transpiler;
 
 namespace KubeOps.Cli.Generators;
 
-internal class RbacGenerator(MetadataLoadContext parser,
+internal sealed class RbacGenerator(MetadataLoadContext parser,
     OutputFormat outputFormat) : IConfigGenerator
 {
     public void Generate(ResultOutput output)
     {
         var attributes = parser
             .GetRbacAttributes()
-            .Concat(parser.GetContextType<DefaultRbacAttributes>().GetCustomAttributesData<EntityRbacAttribute>())
+            .Concat(parser.GetContextType<DefaultRbacAttributes>().GetCustomAttributes<EntityRbacAttribute>())
             .ToList();
 
-        var role = new V1ClusterRole(rules: parser.Transpile(attributes).ToList()).Initialize();
+        var role = new V1ClusterRole(rules: attributes.Transpile().ToList()).Initialize();
         role.Metadata.Name = "operator-role";
         output.Add($"operator-role.{outputFormat.GetFileExtension()}", role);
 

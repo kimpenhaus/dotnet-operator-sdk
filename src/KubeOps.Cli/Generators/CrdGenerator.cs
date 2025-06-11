@@ -8,12 +8,12 @@ using KubeOps.Transpiler;
 
 namespace KubeOps.Cli.Generators;
 
-internal class CrdGenerator(MetadataLoadContext parser, byte[] caBundle,
+internal sealed class CrdGenerator(MetadataLoadContext parser, byte[] caBundle,
     OutputFormat outputFormat) : IConfigGenerator
 {
     public void Generate(ResultOutput output)
     {
-        var crds = parser.Transpile(parser.GetEntities()).ToList();
+        var crds = parser.GetEntities().Transpile().ToList();
         var conversionWebhooks = parser.GetConvertedEntities().ToList();
 
         foreach (var crd in crds)

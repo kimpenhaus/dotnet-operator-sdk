@@ -1,7 +1,5 @@
 ﻿using System.Collections;
-using System.Collections.ObjectModel;
 using System.Reflection;
-using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
 
 using k8s;
@@ -37,13 +35,11 @@ public static class Crds
     /// <summary>
     /// Transpile a single type to a CRD.
     /// </summary>
-    /// <param name="context">The <see cref="MetadataLoadContext"/>.</param>
     /// <param name="type">The type to convert.</param>
     /// <returns>The converted custom resource definition.</returns>
-    public static V1CustomResourceDefinition Transpile(this MetadataLoadContext context, Type type)
+    public static V1CustomResourceDefinition Transpile(this Type type)
     {
-        type = context.GetContextType(type);
-        var (meta, scope) = context.ToEntityMetadata(type);
+        var (meta, scope) = type.ToEntityMetadata();
         var crd = new V1CustomResourceDefinition(new()).Initialize();
 
         crd.Metadata.Name = $"{meta.PluralName}.{meta.Group}";
@@ -58,10 +54,9 @@ public static class Crds
                 Plural = meta.PluralName,
             };
         crd.Spec.Scope = scope;
-        if (type.GetCustomAttributeData<KubernetesEntityShortNamesAttribute>()?.ConstructorArguments[0].Value is
-            ReadOnlyCollection<CustomAttributeTypedArgument> shortNames)
+        if (type.GetCustomAttribute<KubernetesEntityShortNamesAttribute>()?.ShortNames is { } shortNames)
         {
-            crd.Spec.Names.ShortNames = shortNames.Select(a => a.Value?.ToString()).ToList();
+            crd.Spec.Names.ShortNames = shortNames;
         }
 
         var version = new V1CustomResourceDefinitionVersion(meta.Version, true, true);
@@ -75,16 +70,15 @@ public static class Crds
         version.Schema = new V1CustomResourceValidation(new V1JSONSchemaProps
         {
             Type = Object,
-            Description =
-                type.GetCustomAttributeData<DescriptionAttribute>()?.GetCustomAttributeCtorArg<string>(context, 0),
+            Description = type.GetCustomAttribute<DescriptionAttribute>()?.Description,
             Properties = type.GetProperties()
                 .Where(p => !IgnoredToplevelProperties.Contains(p.Name.ToLowerInvariant())
-                            && p.GetCustomAttributeData<IgnoreAttribute>() == null)
-                .Select(p => (Name: p.GetPropertyName(context), Schema: context.Map(p)))
+                            && p.GetCustomAttribute<IgnoreAttribute>() == null)
+                .Select(p => (Name: p.GetPropertyName(), Schema: p.Map()))
                 .ToDictionary(t => t.Name, t => t.Schema),
         });
 
-        version.AdditionalPrinterColumns = context.MapPrinterColumns(type).ToList() switch
+        version.AdditionalPrinterColumns = type.MapPrinterColumns().ToList() switch
         {
             { Count: > 0 } l => l,
             _ => null,
@@ -98,19 +92,16 @@ public static class Crds
     /// <summary>
     /// Transpile a list of entities to CRDs and group them by version.
     /// </summary>
-    /// <param name="context">The <see cref="MetadataLoadContext"/>.</param>
     /// <param name="types">The types to convert.</param>
     /// <returns>The converted custom resource definitions.</returns>
     public static IEnumerable<V1CustomResourceDefinition> Transpile(
-        this MetadataLoadContext context,
-        IEnumerable<Type> types)
+        this IEnumerable<Type> types)
         => types
-            .Select(context.GetContextType)
-            .Where(type => type.Assembly != context.GetContextType<KubernetesEntityAttribute>().Assembly
-                           && type.GetCustomAttributesData<KubernetesEntityAttribute>().Any()
-                           && !type.GetCustomAttributesData<IgnoreAttribute>().Any())
-            .Select(type => (Props: context.Transpile(type),
-                IsStorage: type.GetCustomAttributesData<StorageVersionAttribute>().Any()))
+            .Where(type => type.Assembly != typeof(KubernetesEntityAttribute).Assembly
+                           && type.GetCustomAttributes<KubernetesEntityAttribute>().Any()
+                           && !type.GetCustomAttributes<IgnoreAttribute>().Any())
+            .Select(type => (Props: type.Transpile(),
+                IsStorage: type.GetCustomAttributes<StorageVersionAttribute>().Any()))
             .GroupBy(grp => grp.Props.Metadata.Name)
             .Select(
                 group =>
@@ -143,20 +134,14 @@ public static class Crds
                     return crd;
                 });
 
-    private static string GetPropertyName(this PropertyInfo prop, MetadataLoadContext context)
+    private static string GetPropertyName(this PropertyInfo prop)
     {
-        var name = prop.GetCustomAttributeData<JsonPropertyNameAttribute>() switch
-        {
-            null => prop.Name,
-            { } attr => attr.GetCustomAttributeCtorArg<string>(context, 0) ?? prop.Name,
-        };
+        var name = prop.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? prop.Name;
 
         return $"{name[..1].ToLowerInvariant()}{name[1..]}";
     }
 
-    private static IEnumerable<V1CustomResourceColumnDefinition> MapPrinterColumns(
-        this MetadataLoadContext context,
-        Type type)
+    private static IEnumerable<V1CustomResourceColumnDefinition> MapPrinterColumns(this Type type)
     {
         var props = type.GetProperties().Select(p => (Prop: p, Path: string.Empty)).ToList();
         while (props.Count > 0)
@@ -167,23 +152,23 @@ public static class Crds
             if (prop.PropertyType.IsClass)
             {
                 props.AddRange(prop.PropertyType.GetProperties()
-                    .Select(p => (Prop: p, Path: $"{path}.{prop.GetPropertyName(context)}")));
+                    .Select(p => (Prop: p, Path: $"{path}.{prop.GetPropertyName()}")));
             }
 
-            if (prop.GetCustomAttributeData<AdditionalPrinterColumnAttribute>() is not { } attr)
+            if (prop.GetCustomAttribute<AdditionalPrinterColumnAttribute>() is not { } attr)
             {
                 continue;
             }
 
-            var mapped = context.Map(prop);
+            var mapped = prop.Map();
             yield return new V1CustomResourceColumnDefinition
             {
-                Name = attr.GetCustomAttributeCtorArg<string>(context, 1) ?? prop.GetPropertyName(context),
-                JsonPath = $"{path}.{prop.GetPropertyName(context)}",
+                Name = attr.Name ?? prop.GetPropertyName(),
+                JsonPath = $"{path}.{prop.GetPropertyName()}",
                 Type = mapped.Type,
                 Description = mapped.Description,
                 Format = mapped.Format,
-                Priority = attr.GetCustomAttributeCtorArg<PrinterColumnPriority>(context, 0) switch
+                Priority = attr.Priority switch
                 {
                     PrinterColumnPriority.StandardView => 0,
                     _ => 1,
@@ -191,16 +176,16 @@ public static class Crds
             };
         }
 
-        foreach (var attr in type.GetCustomAttributesData<GenericAdditionalPrinterColumnAttribute>())
+        foreach (var attr in type.GetCustomAttributes<GenericAdditionalPrinterColumnAttribute>())
         {
             yield return new V1CustomResourceColumnDefinition
             {
-                Name = attr.GetCustomAttributeCtorArg<string>(context, 1),
-                JsonPath = attr.GetCustomAttributeCtorArg<string>(context, 0),
-                Type = attr.GetCustomAttributeCtorArg<string>(context, 2),
-                Description = attr.GetCustomAttributeNamedArg<string>(context, "Description"),
-                Format = attr.GetCustomAttributeNamedArg<string>(context, "Format"),
-                Priority = attr.GetCustomAttributeNamedArg<PrinterColumnPriority>(context, "Priority") switch
+                Name = attr.Name,
+                JsonPath = attr.JsonPath,
+                Type = attr.Type,
+                Description = attr.Description,
+                Format = attr.Format,
+                Priority = attr.Priority switch
                 {
                     PrinterColumnPriority.StandardView => 0,
                     _ => 1,
@@ -209,12 +194,11 @@ public static class Crds
         }
     }
 
-    private static V1JSONSchemaProps Map(this MetadataLoadContext context, PropertyInfo prop)
+    private static V1JSONSchemaProps Map(this PropertyInfo prop)
     {
-        var props = context.Map(prop.PropertyType);
+        var props = prop.PropertyType.Map();
 
-        props.Description ??= prop.GetCustomAttributeData<DescriptionAttribute>()
-            ?.GetCustomAttributeCtorArg<string>(context, 0);
+        props.Description ??= prop.GetCustomAttribute<DescriptionAttribute>()?.Description;
 
         if (prop.IsNullable())
         {
@@ -222,55 +206,53 @@ public static class Crds
             props.Nullable = true;
         }
 
-        if (prop.GetCustomAttributeData<ExternalDocsAttribute>() is { } extDocs)
+        if (prop.GetCustomAttribute<ExternalDocsAttribute>() is { } extDocs)
         {
             props.ExternalDocs = new V1ExternalDocumentation(
-                extDocs.GetCustomAttributeCtorArg<string>(context, 0),
-                extDocs.GetCustomAttributeCtorArg<string>(context, 1));
+                extDocs.Description,
+                extDocs.Url);
         }
 
-        if (prop.GetCustomAttributeData<ItemsAttribute>() is { } items)
+        if (prop.GetCustomAttribute<ItemsAttribute>() is { } items)
         {
-            props.MinItems = items.GetCustomAttributeCtorArg<long>(context, 0);
-            props.MaxItems = items.GetCustomAttributeCtorArg<long>(context, 1);
+            props.MinItems = items.MinItems;
+            props.MaxItems = items.MaxItems;
         }
 
-        if (prop.GetCustomAttributeData<LengthAttribute>() is { } length)
+        if (prop.GetCustomAttribute<LengthAttribute>() is { } length)
         {
-            props.MinLength = length.GetCustomAttributeCtorArg<long>(context, 0);
-            props.MaxLength = length.GetCustomAttributeCtorArg<long>(context, 1);
+            props.MinLength = length.MinLength;
+            props.MaxLength = length.MaxLength;
         }
 
-        if (prop.GetCustomAttributeData<MultipleOfAttribute>() is { } multi)
+        if (prop.GetCustomAttribute<MultipleOfAttribute>() is { } multi)
         {
-            props.MultipleOf = multi.GetCustomAttributeCtorArg<double>(context, 0);
+            props.MultipleOf = multi.Value;
         }
 
-        if (prop.GetCustomAttributeData<PatternAttribute>() is { } pattern)
+        if (prop.GetCustomAttribute<PatternAttribute>() is { } pattern)
         {
-            props.Pattern = pattern.GetCustomAttributeCtorArg<string>(context, 0);
+            props.Pattern = pattern.RegexPattern;
         }
 
-        if (prop.GetCustomAttributeData<RangeMaximumAttribute>() is { } rangeMax)
+        if (prop.GetCustomAttribute<RangeMaximumAttribute>() is { } rangeMax)
         {
-            props.Maximum = rangeMax.GetCustomAttributeCtorArg<double>(context, 0);
-            props.ExclusiveMaximum =
-                rangeMax.GetCustomAttributeCtorArg<bool>(context, 1);
+            props.Maximum = rangeMax.Maximum;
+            props.ExclusiveMaximum = rangeMax.ExclusiveMaximum;
         }
 
-        if (prop.GetCustomAttributeData<RangeMinimumAttribute>() is { } rangeMin)
+        if (prop.GetCustomAttribute<RangeMinimumAttribute>() is { } rangeMin)
         {
-            props.Minimum = rangeMin.GetCustomAttributeCtorArg<double>(context, 0);
-            props.ExclusiveMinimum =
-                rangeMin.GetCustomAttributeCtorArg<bool>(context, 1);
+            props.Minimum = rangeMin.Minimum;
+            props.ExclusiveMinimum = rangeMin.ExclusiveMinimum;
         }
 
-        if (prop.GetCustomAttributeData<PreserveUnknownFieldsAttribute>() is not null)
+        if (prop.GetCustomAttribute<PreserveUnknownFieldsAttribute>() is not null)
         {
             props.XKubernetesPreserveUnknownFields = true;
         }
 
-        if (prop.GetCustomAttributeData<EmbeddedResourceAttribute>() is not null)
+        if (prop.GetCustomAttribute<EmbeddedResourceAttribute>() is not null)
         {
             props.XKubernetesEmbeddedResource = true;
             props.XKubernetesPreserveUnknownFields = true;
@@ -278,22 +260,22 @@ public static class Crds
             props.Properties = null;
         }
 
-        if (prop.GetCustomAttributesData<ValidationRuleAttribute>().ToArray() is { Length: > 0 } validations)
+        if (prop.GetCustomAttributes<ValidationRuleAttribute>().ToArray() is { Length: > 0 } validations)
         {
             props.XKubernetesValidations = validations
                 .Select(validation => new V1ValidationRule(
-                    validation.GetCustomAttributeCtorArg<string>(context, 0),
-                    fieldPath: validation.GetCustomAttributeCtorArg<string?>(context, 1),
-                    message: validation.GetCustomAttributeCtorArg<string?>(context, 2),
-                    messageExpression: validation.GetCustomAttributeCtorArg<string?>(context, 3),
-                    reason: validation.GetCustomAttributeCtorArg<string?>(context, 4)))
+                    validation.Rule,
+                    fieldPath: validation.FieldPath,
+                    message: validation.Message,
+                    messageExpression: validation.MessageExpression,
+                    reason: validation.Reason))
                 .ToList();
         }
 
         return props;
     }
 
-    private static V1JSONSchemaProps Map(this MetadataLoadContext context, Type type)
+    private static V1JSONSchemaProps Map(this Type type)
     {
         if (type.FullName == "System.String")
         {
@@ -307,7 +289,7 @@ public static class Crds
 
         if (type.Name == typeof(Nullable<>).Name && type.GenericTypeArguments.Length == 1)
         {
-            var props = context.Map(type.GenericTypeArguments[0]);
+            var props = type.GenericTypeArguments[0].Map();
             props.Nullable = true;
             return props;
         }
@@ -327,7 +309,7 @@ public static class Crds
                 .First(i => i.IsGenericType
                             && i.GetGenericTypeDefinition().FullName == typeof(IDictionary<,>).FullName);
 
-            var additionalProperties = context.Map(dictionaryImpl.GenericTypeArguments[1]);
+            var additionalProperties = dictionaryImpl.GenericTypeArguments[1].Map();
             return new V1JSONSchemaProps
             {
                 Type = Object,
@@ -342,12 +324,12 @@ public static class Crds
 
         if (interfaceNames.Contains(typeof(IEnumerable<>).FullName))
         {
-            return context.MapEnumerationType(type, interfaces);
+            return type.MapEnumerationType(interfaces);
         }
 
         if (type.BaseType?.Name == nameof(CustomKubernetesEntity) || type.BaseType?.Name == typeof(CustomKubernetesEntity<>).Name)
         {
-            return context.MapObjectType(type);
+            return type.MapObjectType();
         }
 
         static Type GetRootBaseType(Type type)
@@ -374,26 +356,25 @@ public static class Crds
 
         return rootBase.FullName switch
         {
-            "System.Object" => context.MapObjectType(type),
-            "System.ValueType" => context.MapValueType(type),
+            "System.Object" => type.MapObjectType(),
+            "System.ValueType" => type.MapValueType(),
             "System.Enum" => new V1JSONSchemaProps
             {
                 Type = String,
-                EnumProperty = GetEnumNames(context, type),
+                EnumProperty = GetEnumNames(type),
             },
             _ => throw InvalidType(type),
         };
     }
 
-    private static IList<object> GetEnumNames(this MetadataLoadContext context, Type type)
+    private static List<object> GetEnumNames(this Type type)
     {
 #if NET9_0_OR_GREATER
         var attributeNameByFieldName = new Dictionary<string, string>();
 
         foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Static))
         {
-            if (field.GetCustomAttributeData<JsonStringEnumMemberNameAttribute>() is { } jsonMemberNameAttribute &&
-                jsonMemberNameAttribute.GetCustomAttributeCtorArg<string>(context, 0) is { } jsonMemberNameAtributeName)
+            if (field.GetCustomAttribute<JsonStringEnumMemberNameAttribute>() is { Name: { } jsonMemberNameAtributeName })
             {
                 attributeNameByFieldName.Add(field.Name, jsonMemberNameAtributeName);
             }
@@ -403,23 +384,16 @@ public static class Crds
 
         foreach (var value in Enum.GetNames(type))
         {
-            if (attributeNameByFieldName.TryGetValue(value, out var name))
-            {
-                enumNames.Add(name);
-            }
-            else
-            {
-                enumNames.Add(value);
-            }
+            enumNames.Add(attributeNameByFieldName.GetValueOrDefault(value, value));
         }
 
         return enumNames;
 #else
-        return Enum.GetNames(type);
+        return Enum.GetNames(type).Cast<object>().ToList();
 #endif
     }
 
-    private static V1JSONSchemaProps MapObjectType(this MetadataLoadContext context, Type type)
+    private static V1JSONSchemaProps MapObjectType(this Type type)
     {
         switch (type.FullName)
         {
@@ -428,9 +402,9 @@ public static class Crds
             case "k8s.Models.IntstrIntOrString":
                 return new V1JSONSchemaProps { XKubernetesIntOrString = true };
             default:
-                if (context.GetContextType<IKubernetesObject>().IsAssignableFrom(type) &&
+                if (typeof(IKubernetesObject).IsAssignableFrom(type) &&
                     type is { IsAbstract: false, IsInterface: false } &&
-                    type.Assembly == context.GetContextType<IKubernetesObject>().Assembly)
+                    type.Assembly == typeof(IKubernetesObject).Assembly)
                 {
                     return new V1JSONSchemaProps
                     {
@@ -444,31 +418,28 @@ public static class Crds
                 return new V1JSONSchemaProps
                 {
                     Type = Object,
-                    Description =
-                        type.GetCustomAttributeData<DescriptionAttribute>()
-                            ?.GetCustomAttributeCtorArg<string>(context, 0),
+                    Description = type.GetCustomAttribute<DescriptionAttribute>()?.Description,
                     Properties = type
                         .GetProperties()
-                        .Where(p => p.GetCustomAttributeData<IgnoreAttribute>() == null)
-                        .Select(p => (Name: p.GetPropertyName(context), Schema: context.Map(p)))
+                        .Where(p => p.GetCustomAttribute<IgnoreAttribute>() == null)
+                        .Select(p => (Name: p.GetPropertyName(), Schema: p.Map()))
                         .ToDictionary(t => t.Name, t => t.Schema),
                     Required = type.GetProperties()
-                            .Where(p => p.GetCustomAttributeData<RequiredAttribute>() != null
-                                        && p.GetCustomAttributeData<IgnoreAttribute>() == null)
-                            .Select(p => p.GetPropertyName(context))
+                            .Where(p => p.GetCustomAttribute<RequiredAttribute>() != null
+                                        && p.GetCustomAttribute<IgnoreAttribute>() == null)
+                            .Select(p => p.GetPropertyName())
                             .ToList() switch
                     {
                         { Count: > 0 } p => p,
                         _ => null,
                     },
-                    XKubernetesPreserveUnknownFields = type.GetCustomAttributeData<PreserveUnknownFieldsAttribute>() != null ? true : null,
+                    XKubernetesPreserveUnknownFields = type.GetCustomAttribute<PreserveUnknownFieldsAttribute>() != null ? true : null,
                 };
         }
     }
 
     private static V1JSONSchemaProps MapEnumerationType(
-        this MetadataLoadContext context,
-        Type type,
+        this Type type,
         IEnumerable<Type> interfaces)
     {
         Type? enumerableType = interfaces
@@ -484,7 +455,7 @@ public static class Crds
         Type listType = enumerableType.GenericTypeArguments[0];
         if (listType.IsGenericType && listType.GetGenericTypeDefinition().FullName == typeof(KeyValuePair<,>).FullName)
         {
-            var additionalProperties = context.Map(listType.GenericTypeArguments[1]);
+            var additionalProperties = listType.GenericTypeArguments[1].Map();
             return new V1JSONSchemaProps
             {
                 Type = Object,
@@ -492,11 +463,11 @@ public static class Crds
             };
         }
 
-        var items = context.Map(listType);
+        var items = listType.Map();
         return new V1JSONSchemaProps { Type = Array, Items = items };
     }
 
-    private static V1JSONSchemaProps MapValueType(this MetadataLoadContext _, Type type) =>
+    private static V1JSONSchemaProps MapValueType(this Type type) =>
         type.FullName switch
         {
             "System.Int32" => new V1JSONSchemaProps { Type = Integer, Format = Int32 },
