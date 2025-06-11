@@ -36,9 +36,7 @@ public sealed class CrdInstaller : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await using var p = new MlcProvider();
-        await p.InitializeAsync();
-        _crds = p.Mlc.Transpile(new[] { typeof(V1OperatorWebIntegrationTestEntity) }).ToList();
+        _crds = new[] { typeof(V1OperatorWebIntegrationTestEntity) }.Transpile().ToList();
 
         using var client = new Kubernetes(KubernetesClientConfiguration.BuildDefaultConfig());
         foreach (var crd in _crds)

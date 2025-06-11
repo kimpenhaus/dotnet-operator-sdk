@@ -54,7 +54,7 @@ internal static class Uninstall
         };
 
         console.WriteLine($"Uninstall CRDs from {file.Name}.");
-        var crds = parser.Transpile(parser.GetEntities()).ToList();
+        var crds = parser.GetEntities().Transpile().ToList();
         if (crds.Count == 0)
         {
             console.WriteLine("No CRDs found. Exiting.");

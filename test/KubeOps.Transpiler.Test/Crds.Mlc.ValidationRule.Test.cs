@@ -21,7 +21,7 @@ public sealed partial class CrdsMlcTest
     [Fact]
     public void Should_Set_Validations()
     {
-        var crd = _mlc.Transpile(typeof(SingleValidateAttrEntity));
+        var crd = typeof(SingleValidateAttrEntity).Transpile();
 
         var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.XKubernetesValidations.Should().HaveCount(1);
@@ -35,7 +35,7 @@ public sealed partial class CrdsMlcTest
     [Fact]
     public void Should_Set_MultipleValidations()
     {
-        var crd = _mlc.Transpile(typeof(MultiValidateAttrEntity));
+        var crd = typeof(MultiValidateAttrEntity).Transpile();
 
         var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.XKubernetesValidations.Should().HaveCount(2);
@@ -54,7 +54,7 @@ public sealed partial class CrdsMlcTest
     [Fact]
     public void Should_Omit_Validations()
     {
-        var crd = _mlc.Transpile(typeof(NoValidateAttrEntity));
+        var crd = typeof(NoValidateAttrEntity).Transpile();
 
         var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.XKubernetesValidations.Should().BeNull();
@@ -63,7 +63,7 @@ public sealed partial class CrdsMlcTest
     [Fact]
     public void Should_Set_ValidationFields()
     {
-        var crd = _mlc.Transpile(typeof(AllFieldsValidateAttrEntity));
+        var crd = typeof(AllFieldsValidateAttrEntity).Transpile();
 
         var specProperties = crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["property"];
         specProperties.XKubernetesValidations.Should().HaveCount(1);
