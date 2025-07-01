@@ -5,11 +5,13 @@ using k8s.Models;
 
 using KubeOps.Abstractions.Builder;
 using KubeOps.Abstractions.Controller;
+using KubeOps.Abstractions.Crds;
 using KubeOps.Abstractions.Entities;
 using KubeOps.Abstractions.Events;
 using KubeOps.Abstractions.Finalizer;
 using KubeOps.Abstractions.Queue;
 using KubeOps.KubernetesClient;
+using KubeOps.Operator.Crds;
 using KubeOps.Operator.Constants;
 using KubeOps.Operator.Events;
 using KubeOps.Operator.Finalizer;
@@ -98,6 +100,15 @@ internal sealed class OperatorBuilder : IOperatorBuilder
         return this;
     }
 
+    public IOperatorBuilder AddCrdInstaller(Action<CrdInstallerSettings>? configure = null)
+    {
+        var settings = new CrdInstallerSettings();
+        configure?.Invoke(settings);
+        Services.AddSingleton(settings);
+        Services.AddHostedService<CrdInstaller>();
+        return this;
+    }
+
     private void AddOperatorBase()
     {
         Services.AddSingleton(_settings);
@@ -123,8 +134,8 @@ internal sealed class OperatorBuilder : IOperatorBuilder
         Services.TryAddSingleton<IKubernetesClient, KubernetesClient.KubernetesClient>();
 
         Services.TryAddTransient<IEventPublisherFactory, KubeOpsEventPublisherFactory>();
-        Services.TryAddTransient<EventPublisher>(
-            services => services.GetRequiredService<IEventPublisherFactory>().Create());
+        Services.TryAddTransient<EventPublisher>(services =>
+            services.GetRequiredService<IEventPublisherFactory>().Create());
 
         Services.AddSingleton(typeof(IEntityLabelSelector<>), typeof(DefaultEntityLabelSelector<>));
 
