@@ -12,7 +12,6 @@ using KubeOps.Abstractions.Finalizer;
 using KubeOps.Abstractions.Queue;
 using KubeOps.KubernetesClient;
 using KubeOps.Operator.Crds;
-using KubeOps.Operator.Constants;
 using KubeOps.Operator.Events;
 using KubeOps.Operator.Finalizer;
 using KubeOps.Operator.LeaderElection;
