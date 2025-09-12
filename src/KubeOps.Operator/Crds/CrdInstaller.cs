@@ -17,7 +17,7 @@ using Microsoft.Extensions.Logging;
 
 namespace KubeOps.Operator.Crds;
 
-internal class CrdInstaller(ILogger<CrdInstaller> logger, CrdInstallerSettings settings, IKubernetesClient client)
+internal sealed class CrdInstaller(ILogger<CrdInstaller> logger, CrdInstallerSettings settings, IKubernetesClient client)
     : IHostedService
 {
     private List<V1CustomResourceDefinition> _crds = [];
@@ -47,7 +47,7 @@ internal class CrdInstaller(ILogger<CrdInstaller> logger, CrdInstallerSettings s
                     Directory.GetFiles(Path.GetDirectoryName(assembly.Location)!, "*.dll"))
                 .Distinct(),
             coreAssemblyName: typeof(object).Assembly.GetName().Name);
-        _crds = mlc.Transpile(entities).ToList();
+        _crds = entities.Transpile().ToList();
 
         foreach (var crd in _crds)
         {
