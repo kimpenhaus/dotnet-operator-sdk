@@ -1,4 +1,8 @@
-﻿using System.Collections;
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the Apache 2.0 License.
+// See the LICENSE file in the project root for more information.
+
+using System.Collections;
 using System.Reflection;
 using System.Text.Json.Serialization;
 
@@ -103,36 +107,33 @@ public static class Crds
             .Select(type => (Props: type.Transpile(),
                 IsStorage: type.GetCustomAttributes<StorageVersionAttribute>().Any()))
             .GroupBy(grp => grp.Props.Metadata.Name)
-            .Select(
-                group =>
+            .Select(group =>
+            {
+                if (group.Count(def => def.IsStorage) > 1)
                 {
-                    if (group.Count(def => def.IsStorage) > 1)
+                    throw new ArgumentException("There are multiple stored versions on an entity.");
+                }
+
+                var crd = group.First().Props;
+                crd.Spec.Versions = group
+                    .SelectMany(c => c.Props.Spec.Versions.Select(v =>
                     {
-                        throw new ArgumentException("There are multiple stored versions on an entity.");
-                    }
+                        v.Served = true;
+                        v.Storage = c.IsStorage;
+                        return v;
+                    }))
+                    .OrderByDescending(v => v.Name, new KubernetesVersionComparer())
+                    .ToList();
 
-                    var crd = group.First().Props;
-                    crd.Spec.Versions = group
-                        .SelectMany(
-                            c => c.Props.Spec.Versions.Select(
-                                v =>
-                                {
-                                    v.Served = true;
-                                    v.Storage = c.IsStorage;
-                                    return v;
-                                }))
-                        .OrderByDescending(v => v.Name, new KubernetesVersionComparer())
-                        .ToList();
+                // when only one version exists, or when no StorageVersion attributes are found
+                // the first version in the list is the stored one.
+                if (crd.Spec.Versions.Count == 1 || !group.Any(def => def.IsStorage))
+                {
+                    crd.Spec.Versions[0].Storage = true;
+                }
 
-                    // when only one version exists, or when no StorageVersion attributes are found
-                    // the first version in the list is the stored one.
-                    if (crd.Spec.Versions.Count == 1 || !group.Any(def => def.IsStorage))
-                    {
-                        crd.Spec.Versions[0].Storage = true;
-                    }
-
-                    return crd;
-                });
+                return crd;
+            });
 
     private static string GetPropertyName(this PropertyInfo prop)
     {
@@ -310,11 +311,7 @@ public static class Crds
                             && i.GetGenericTypeDefinition().FullName == typeof(IDictionary<,>).FullName);
 
             var additionalProperties = dictionaryImpl.GenericTypeArguments[1].Map();
-            return new V1JSONSchemaProps
-            {
-                Type = Object,
-                AdditionalProperties = additionalProperties,
-            };
+            return new V1JSONSchemaProps { Type = Object, AdditionalProperties = additionalProperties, };
         }
 
         if (interfaceNames.Contains(typeof(IDictionary).FullName))
@@ -327,7 +324,8 @@ public static class Crds
             return type.MapEnumerationType(interfaces);
         }
 
-        if (type.BaseType?.Name == nameof(CustomKubernetesEntity) || type.BaseType?.Name == typeof(CustomKubernetesEntity<>).Name)
+        if (type.BaseType?.Name == nameof(CustomKubernetesEntity) ||
+            type.BaseType?.Name == typeof(CustomKubernetesEntity<>).Name)
         {
             return type.MapObjectType();
         }
@@ -358,11 +356,7 @@ public static class Crds
         {
             "System.Object" => type.MapObjectType(),
             "System.ValueType" => type.MapValueType(),
-            "System.Enum" => new V1JSONSchemaProps
-            {
-                Type = String,
-                EnumProperty = GetEnumNames(type),
-            },
+            "System.Enum" => new V1JSONSchemaProps { Type = String, EnumProperty = GetEnumNames(type), },
             _ => throw InvalidType(type),
         };
     }
@@ -433,7 +427,8 @@ public static class Crds
                         { Count: > 0 } p => p,
                         _ => null,
                     },
-                    XKubernetesPreserveUnknownFields = type.GetCustomAttribute<PreserveUnknownFieldsAttribute>() != null ? true : null,
+                    XKubernetesPreserveUnknownFields =
+                        type.GetCustomAttribute<PreserveUnknownFieldsAttribute>() != null ? true : null,
                 };
         }
     }
@@ -456,11 +451,7 @@ public static class Crds
         if (listType.IsGenericType && listType.GetGenericTypeDefinition().FullName == typeof(KeyValuePair<,>).FullName)
         {
             var additionalProperties = listType.GenericTypeArguments[1].Map();
-            return new V1JSONSchemaProps
-            {
-                Type = Object,
-                AdditionalProperties = additionalProperties,
-            };
+            return new V1JSONSchemaProps { Type = Object, AdditionalProperties = additionalProperties, };
         }
 
         var items = listType.Map();
