@@ -162,8 +162,7 @@ internal sealed class Reconciler<TEntity>(
         // which implies that there is at least a single finalizer
         var identifier = entity.Finalizers()[0];
 
-        if (scope.ServiceProvider.GetKeyedService<IEntityFinalizer<TEntity>>(identifier) is not
-            { } finalizer)
+        if (scope.ServiceProvider.GetKeyedService<IEntityFinalizer<TEntity>>(identifier) is not { } finalizer)
         {
             logger.LogInformation(
                 """Entity "{Kind}/{Name}" is finalizing but this operator has no registered finalizers for the identifier {FinalizerIdentifier}.""",
