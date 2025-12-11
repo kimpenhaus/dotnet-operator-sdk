@@ -4,7 +4,6 @@
 
 using k8s;
 using k8s.Models;
-
 using KubeOps.Abstractions.Builder;
 using KubeOps.Abstractions.Reconciliation;
 using KubeOps.Abstractions.Reconciliation.Controller;
@@ -12,10 +11,8 @@ using KubeOps.Abstractions.Reconciliation.Finalizer;
 using KubeOps.KubernetesClient;
 using KubeOps.Operator.Constants;
 using KubeOps.Operator.Queue;
-
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-
 using ZiggyCreatures.Caching.Fusion;
 
 namespace KubeOps.Operator.Reconciliation;
@@ -137,17 +134,14 @@ internal sealed class Reconciler<TEntity>(
 
         if (operatorSettings.AutoAttachFinalizers)
         {
-            var finalizers = scope.ServiceProvider.GetKeyedServices<IEntityFinalizer<TEntity>>(KeyedService.AnyKey).ToArray();
+            var finalizers = scope.ServiceProvider.GetKeyedServices<IEntityFinalizer<TEntity>>(KeyedService.AnyKey);
 
             foreach (var finalizer in finalizers)
             {
                 entity.AddFinalizer(finalizer.GetIdentifierName(entity));
             }
 
-            if (finalizers.Length > 0)
-            {
-                entity = await client.UpdateAsync(entity, cancellationToken);
-            }
+            entity = await client.UpdateAsync(entity, cancellationToken);
         }
 
         var controller = scope.ServiceProvider.GetRequiredService<IEntityController<TEntity>>();
