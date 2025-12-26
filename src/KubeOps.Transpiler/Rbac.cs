@@ -42,43 +42,42 @@ public static class Rbac
         var entities = list
             .Where(a => a.AttributeType == context.GetContextType<EntityRbacAttribute>())
             .SelectMany(attribute =>
-                attribute.GetCustomAttributeCtorArrayArg<Type>(0).Select(type =>
-                    (EntityType: type,
-                        Verbs: attribute.GetCustomAttributeNamedArg<RbacVerb>(
-                            context,
-                            nameof(GenericRbacAttribute.Verbs)))))
+                attribute.GetCustomAttributeCtorArrayArg<Type>(0)
+                    .Select(type =>
+                        (EntityType: type,
+                            Verbs: attribute.GetCustomAttributeNamedArg<RbacVerb>(
+                                context,
+                                nameof(GenericRbacAttribute.Verbs)))))
             .GroupBy(e => e.EntityType)
-            .Select(
-                group => (
-                    Crd: context.ToEntityMetadata(group.Key),
-                    Verbs: group.Aggregate(RbacVerb.None, (accumulator, element) => accumulator | element.Verbs)))
+            .Select(group => (
+                Crd: context.ToEntityMetadata(group.Key),
+                Verbs: group.Aggregate(RbacVerb.None, (accumulator, element) => accumulator | element.Verbs)))
             .GroupBy(group => (group.Crd.Metadata.Group, group.Verbs))
-            .Select(
-                group => new V1PolicyRule
-                {
-                    ApiGroups = [group.Key.Group],
-                    Resources = group.Select(crd => crd.Crd.Metadata.PluralName).Distinct().ToList(),
-                    Verbs = ConvertToStrings(group.Key.Verbs),
-                });
+            .Select(group => new V1PolicyRule
+            {
+                ApiGroups = [group.Key.Group],
+                Resources = group.Select(crd => crd.Crd.Metadata.PluralName).Distinct().ToList(),
+                Verbs = ConvertToStrings(group.Key.Verbs),
+            });
 
         var entityStatus = list
             .Where(a => a.AttributeType == context.GetContextType<EntityRbacAttribute>())
             .SelectMany(attribute =>
-                attribute.GetCustomAttributeCtorArrayArg<Type>(0).Select(type =>
-                    (EntityType: type,
-                        Verbs: attribute.GetCustomAttributeNamedArg<RbacVerb>(
-                            context,
-                            nameof(GenericRbacAttribute.Verbs)))))
+                attribute.GetCustomAttributeCtorArrayArg<Type>(0)
+                    .Select(type =>
+                        (EntityType: type,
+                            Verbs: attribute.GetCustomAttributeNamedArg<RbacVerb>(
+                                context,
+                                nameof(GenericRbacAttribute.Verbs)))))
             .Where(e => e.EntityType.GetProperty("Status") != null)
             .GroupBy(e => e.EntityType)
             .Select(group => context.ToEntityMetadata(group.Key))
-            .Select(
-                crd => new V1PolicyRule
-                {
-                    ApiGroups = [crd.Metadata.Group],
-                    Resources = [$"{crd.Metadata.PluralName}/status"],
-                    Verbs = ConvertToStrings(RbacVerb.Get | RbacVerb.Patch | RbacVerb.Update),
-                });
+            .Select(crd => new V1PolicyRule
+            {
+                ApiGroups = [crd.Metadata.Group],
+                Resources = [$"{crd.Metadata.PluralName}/status"],
+                Verbs = ConvertToStrings(RbacVerb.Get | RbacVerb.Patch | RbacVerb.Update),
+            });
 
         return generic.Concat(entities).Concat(entityStatus);
     }
@@ -91,11 +90,13 @@ public static class Rbac
             Enum.GetValues<RbacVerb>()
                 .Where(v => v != RbacVerb.All && v != RbacVerb.None && v != RbacVerb.AllExplicit)
                 .Select(v => v.ToString().ToLowerInvariant())
+                .Order()
                 .ToArray(),
         _ =>
             Enum.GetValues<RbacVerb>()
                 .Where(v => verbs.HasFlag(v) && v != RbacVerb.All && v != RbacVerb.None && v != RbacVerb.AllExplicit)
                 .Select(v => v.ToString().ToLowerInvariant())
+                .Order()
                 .ToArray(),
     };
 }

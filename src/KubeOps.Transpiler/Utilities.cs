@@ -119,7 +119,7 @@ public static class Utilities
     public static IList<T> GetCustomAttributeNamedArrayArg<T>(this CustomAttributeData attr, string name) =>
         attr.NamedArguments.FirstOrDefault(a => a.MemberName == name).TypedValue.Value is
             ReadOnlyCollection<CustomAttributeTypedArgument> value
-            ? value.Select(v => (T)v.Value!).ToList()
+            ? value.Select(v => (T)v.Value!).Order().ToList()
             : [];
 
     /// <summary>
