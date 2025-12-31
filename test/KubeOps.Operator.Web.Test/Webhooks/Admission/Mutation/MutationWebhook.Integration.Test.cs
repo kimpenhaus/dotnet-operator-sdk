@@ -7,9 +7,9 @@ using FluentAssertions;
 using KubeOps.KubernetesClient;
 using KubeOps.Operator.Web.Test.TestApp;
 
-namespace KubeOps.Operator.Web.Test.Webhooks;
+namespace KubeOps.Operator.Web.Test.Webhooks.Admission.Mutation;
 
-public class MutationWebhookIntegrationTest : IntegrationTestBase
+public sealed class MutationWebhookIntegrationTest : IntegrationTestBase
 {
     [Fact(Skip = "This test is flakey since localtunnel is not always available. Need an alternative.")]
     public async Task Should_Allow_Creation_Of_Entity()

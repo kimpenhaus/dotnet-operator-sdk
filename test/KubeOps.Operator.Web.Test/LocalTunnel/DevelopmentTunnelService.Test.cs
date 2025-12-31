@@ -18,7 +18,7 @@ public class DevelopmentTunnelServiceTest : IntegrationTestBase
         using var client = new KubernetesClient.KubernetesClient() as IKubernetesClient;
         var validators = await client.GetAsync<V1ValidatingWebhookConfiguration>("dev-validators");
         validators.Should().NotBeNull();
-        validators!.Webhooks.Should().HaveCount(1);
+        validators.Webhooks.Should().HaveCount(1);
         validators.Webhooks[0].Name.Should().Be("validate.weboperatorintegrationtest.weboperator.test.v1");
         validators.Webhooks[0].ClientConfig.Url.Should().Contain("/validate/v1operatorwebintegrationtestentity");
     }
@@ -29,7 +29,7 @@ public class DevelopmentTunnelServiceTest : IntegrationTestBase
         using var client = new KubernetesClient.KubernetesClient() as IKubernetesClient;
         var mutators = await client.GetAsync<V1ValidatingWebhookConfiguration>("dev-mutators");
         mutators.Should().NotBeNull();
-        mutators!.Webhooks.Should().HaveCount(1);
+        mutators.Webhooks.Should().HaveCount(1);
         mutators.Webhooks[0].Name.Should().Be("mutate.weboperatorintegrationtest.weboperator.test.v1");
         mutators.Webhooks[0].ClientConfig.Url.Should().Contain("/mutate/v1operatorwebintegrationtestentity");
     }

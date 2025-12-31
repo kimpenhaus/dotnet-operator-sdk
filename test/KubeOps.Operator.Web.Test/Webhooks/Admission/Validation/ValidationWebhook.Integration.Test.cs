@@ -9,9 +9,9 @@ using k8s.Autorest;
 using KubeOps.KubernetesClient;
 using KubeOps.Operator.Web.Test.TestApp;
 
-namespace KubeOps.Operator.Web.Test.Webhooks;
+namespace KubeOps.Operator.Web.Test.Webhooks.Admission.Validation;
 
-public class ValidationWebhookIntegrationTest : IntegrationTestBase
+public sealed class ValidationWebhookIntegrationTest : IntegrationTestBase
 {
     [Fact(Skip = "This test is flakey since localtunnel is not always available. Need an alternative.")]
     public async Task Should_Allow_Creation_Of_Entity()
