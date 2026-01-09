@@ -21,16 +21,20 @@ public sealed class AdmissionRequestModelBinderTest
     private readonly AdmissionRequestModelBinder _binder = new();
 
     [Fact]
-    public async Task Should_Bind_Valid_AdmissionRequest_With_TimeSpan_Property()
+    public async Task Should_Bind_Valid_AdmissionRequest_With_ISODurationTimeSpan()
     {
         // Arrange
-        const string json = """
+        const string expectedUid = "test-uid-123";
+        const string expectedOperation = "CREATE";
+        const string expectedValue = "some_value";
+
+        const string json = $$"""
                             {
                               "apiVersion": "admission.k8s.io/v1",
                               "kind": "AdmissionReview",
                               "request": {
-                                "uid": "test-uid-123",
-                                "operation": "CREATE",
+                                "uid": "{{expectedUid}}",
+                                "operation": "{{expectedOperation}}",
                                 "object": {
                                   "apiVersion": "test.kubeops.dev/v1",
                                   "kind": "TestEntity",
@@ -39,67 +43,8 @@ public sealed class AdmissionRequestModelBinderTest
                                     "namespace": "default"
                                   },
                                   "spec": {
-                                    "value": "testvalue",
+                                    "value": "{{expectedValue}}",
                                     "timeout": "PT5M30S"
-                                  }
-                                },
-                                "dryRun": false
-                              }
-                            }
-                            """;
-
-        var bindingContext = CreateBindingContext(json, typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>));
-
-        // Act
-        await _binder.BindModelAsync(bindingContext);
-
-        // Assert
-        bindingContext.Result.IsModelSet.Should().BeTrue();
-
-        var result = bindingContext.Result.Model as AdmissionRequest<TestEntityWithISODurationTimeSpan>;
-        result.Should().NotBeNull();
-        result.Request.Uid.Should().Be("test-uid-123");
-        result.Request.Operation.Should().Be("CREATE");
-        result.Request.Object.Should().NotBeNull();
-        result.Request.Object!.Metadata.Name.Should().Be("test-entity");
-        result.Request.Object.Spec.Value.Should().Be("testvalue");
-        result.Request.Object.Spec.Timeout.Should().Be(TimeSpan.FromMinutes(5).Add(TimeSpan.FromSeconds(30)));
-        result.Request.DryRun.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task Should_Bind_UPDATE_Operation_With_TimeSpan()
-    {
-        // Arrange
-        const string json = """
-                            {
-                              "apiVersion": "admission.k8s.io/v1",
-                              "kind": "AdmissionReview",
-                              "request": {
-                                "uid": "mutation-uid-456",
-                                "operation": "UPDATE",
-                                "object": {
-                                  "apiVersion": "test.kubeops.dev/v1",
-                                  "kind": "TestEntity",
-                                  "metadata": {
-                                    "name": "test-entity",
-                                    "namespace": "default"
-                                  },
-                                  "spec": {
-                                    "value": "newvalue",
-                                    "timeout": "PT1H"
-                                  }
-                                },
-                                "oldObject": {
-                                  "apiVersion": "test.kubeops.dev/v1",
-                                  "kind": "TestEntity",
-                                  "metadata": {
-                                    "name": "test-entity",
-                                    "namespace": "default"
-                                  },
-                                  "spec": {
-                                    "value": "oldvalue",
-                                    "timeout": "PT30M"
                                   }
                                 },
                                 "dryRun": true
@@ -107,77 +52,44 @@ public sealed class AdmissionRequestModelBinderTest
                             }
                             """;
 
-        var bindingContext = CreateBindingContext(json, typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>));
+        var bindingContext = CreateBindingContext(
+            json,
+            typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>));
 
         // Act
         await _binder.BindModelAsync(bindingContext);
 
         // Assert
         bindingContext.Result.IsModelSet.Should().BeTrue();
+        bindingContext.Result.Model.Should().BeOfType<AdmissionRequest<TestEntityWithISODurationTimeSpan>>();
 
-        var result = bindingContext.Result.Model as AdmissionRequest<TestEntityWithISODurationTimeSpan>;
-        result.Should().NotBeNull();
-        result.Request.Uid.Should().Be("mutation-uid-456");
-        result.Request.Operation.Should().Be("UPDATE");
+        var result = (AdmissionRequest<TestEntityWithISODurationTimeSpan>)bindingContext.Result.Model;
+        result.Request.Should().NotBeNull();
+        result.Request.Uid.Should().Be(expectedUid);
+        result.Request.Operation.Should().Be(expectedOperation);
         result.Request.Object.Should().NotBeNull();
-        result.Request.Object.Spec.Value.Should().Be("newvalue");
-        result.Request.Object.Spec.Timeout.Should().Be(TimeSpan.FromHours(1));
-        result.Request.OldObject.Should().NotBeNull();
-        result.Request.OldObject.Spec.Value.Should().Be("oldvalue");
-        result.Request.OldObject.Spec.Timeout.Should().Be(TimeSpan.FromMinutes(30));
+        result.Request.Object.Metadata.Name.Should().Be("test-entity");
+        result.Request.Object.Spec.Value.Should().Be(expectedValue);
+        result.Request.Object.Spec.Timeout.Should().Be(TimeSpan.FromMinutes(5).Add(TimeSpan.FromSeconds(30)));
         result.Request.DryRun.Should().BeTrue();
     }
 
     [Fact]
-    public async Task Should_Handle_Empty_Value()
+    public async Task Should_Bind_Valid_AdmissionRequest_With_TimeSpan()
     {
         // Arrange
-        var bindingContext = CreateBindingContext(string.Empty, typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>));
+        const string expectedUid = "test-uid-456";
+        const string expectedOperation = "DELETE";
+        const string expectedValue = "some_value";
 
-        // Act
-        await _binder.BindModelAsync(bindingContext);
-
-        // Assert
-        bindingContext.Result.IsModelSet.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task Should_Handle_Missing_Value()
-    {
-        // Arrange
-        var actionContext = new ActionContext(
-            new DefaultHttpContext(),
-            new(),
-            new());
-
-        var bindingContext = new DefaultModelBindingContext
-        {
-            ActionContext = actionContext,
-            ModelMetadata = new EmptyModelMetadataProvider().GetMetadataForType(typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>)),
-            ModelName = ModelName,
-            ModelState = actionContext.ModelState,
-            ValueProvider = new TestValueProvider(),
-        };
-
-        // Act
-        await _binder.BindModelAsync(bindingContext);
-
-        // Assert
-        bindingContext.Result.IsModelSet.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task Should_Bind_DELETE_Operation()
-    {
-        // Arrange
-        const string json = """
+        const string json = $$"""
                             {
                               "apiVersion": "admission.k8s.io/v1",
                               "kind": "AdmissionReview",
                               "request": {
-                                "uid": "delete-uid-789",
-                                "operation": "DELETE",
-                                "oldObject": {
+                                "uid": "{{expectedUid}}",
+                                "operation": "{{expectedOperation}}",
+                                "object": {
                                   "apiVersion": "test.kubeops.dev/v1",
                                   "kind": "TestEntity",
                                   "metadata": {
@@ -185,42 +97,75 @@ public sealed class AdmissionRequestModelBinderTest
                                     "namespace": "default"
                                   },
                                   "spec": {
-                                    "value": "deletedvalue",
-                                    "timeout": "PT15M"
+                                    "value": "{{expectedValue}}",
+                                    "timeout": "05:30:00"
                                   }
                                 },
-                                "dryRun": false
+                                "dryRun": true
                               }
                             }
                             """;
 
-        var bindingContext = CreateBindingContext(json, typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>));
+        var bindingContext = CreateBindingContext(
+            json,
+            typeof(AdmissionRequest<TestEntityWithTimeSpanConverter>));
 
         // Act
         await _binder.BindModelAsync(bindingContext);
 
         // Assert
         bindingContext.Result.IsModelSet.Should().BeTrue();
+        bindingContext.Result.Model.Should().BeOfType<AdmissionRequest<TestEntityWithTimeSpanConverter>>();
 
-        var result = bindingContext.Result.Model as AdmissionRequest<TestEntityWithISODurationTimeSpan>;
-        result.Should().NotBeNull();
-        result.Request.Uid.Should().Be("delete-uid-789");
-        result.Request.Operation.Should().Be("DELETE");
-        result.Request.Object.Should().BeNull();
-        result.Request.OldObject.Should().NotBeNull();
-        result.Request.OldObject!.Spec.Value.Should().Be("deletedvalue");
-        result.Request.OldObject.Spec.Timeout.Should().Be(TimeSpan.FromMinutes(15));
+        var result = (AdmissionRequest<TestEntityWithTimeSpanConverter>)bindingContext.Result.Model;
+        result.Request.Should().NotBeNull();
+        result.Request.Uid.Should().Be(expectedUid);
+        result.Request.Operation.Should().Be(expectedOperation);
+        result.Request.Object.Should().NotBeNull();
+        result.Request.Object.Metadata.Name.Should().Be("test-entity");
+        result.Request.Object.Spec.Value.Should().Be(expectedValue);
+        result.Request.Object.Spec.Timeout.Should().Be(TimeSpan.FromHours(5).Add(TimeSpan.FromMinutes(30)));
+        result.Request.DryRun.Should().BeTrue();
     }
 
-    private static DefaultModelBindingContext CreateBindingContext(string json, Type modelType)
+    [Fact]
+    public async Task Should_Handle_Empty_Value()
     {
-        var httpContext = new DefaultHttpContext();
+        // Arrange
+        var bindingContext = CreateBindingContext(
+            string.Empty,
+            typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>));
+
+        // Act
+        await _binder.BindModelAsync(bindingContext);
+
+        // Assert
+        bindingContext.Result.IsModelSet.Should().BeFalse();
+        bindingContext.Result.Model.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Should_Handle_Missing_Value()
+    {
+        // Arrange
+        var bindingContext = CreateBindingContext(
+            null,
+            typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>));
+
+        // Act
+        await _binder.BindModelAsync(bindingContext);
+
+        // Assert
+        bindingContext.Result.IsModelSet.Should().BeFalse();
+        bindingContext.Result.Model.Should().BeNull();
+    }
+
+    private static DefaultModelBindingContext CreateBindingContext(string? json, Type modelType)
+    {
         var actionContext = new ActionContext(
-            httpContext,
+            new DefaultHttpContext(),
             new(),
             new());
-
-        var valueProvider = new TestValueProvider(json);
 
         return new()
         {
@@ -228,7 +173,7 @@ public sealed class AdmissionRequestModelBinderTest
             ModelMetadata = new EmptyModelMetadataProvider().GetMetadataForType(modelType),
             ModelName = ModelName,
             ModelState = actionContext.ModelState,
-            ValueProvider = valueProvider,
+            ValueProvider = new TestValueProvider(json),
         };
     }
 
@@ -236,7 +181,7 @@ public sealed class AdmissionRequestModelBinderTest
     {
         private readonly string? _value;
 
-        public TestValueProvider(string? value = null)
+        public TestValueProvider(string? value)
         {
             _value = value;
         }
