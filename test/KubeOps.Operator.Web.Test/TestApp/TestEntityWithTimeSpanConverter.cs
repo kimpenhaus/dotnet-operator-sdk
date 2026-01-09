@@ -13,7 +13,7 @@ using KubeOps.Abstractions.Entities;
 namespace KubeOps.Operator.Web.Test.TestApp;
 
 [KubernetesEntity(Group = "test.kubeops.dev", ApiVersion = "v1", Kind = "TestEntity")]
-public sealed class TestEntityWithTimeSpanConverter : CustomKubernetesEntity<TestEntityWithISODurationTimeSpan.EntitySpec>
+public sealed class TestEntityWithTimeSpanConverter : CustomKubernetesEntity<TestEntityWithTimeSpanConverter.EntitySpec>
 {
     public TestEntityWithTimeSpanConverter()
     {
