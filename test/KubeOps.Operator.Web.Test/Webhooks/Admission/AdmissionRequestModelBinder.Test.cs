@@ -120,10 +120,10 @@ public sealed class AdmissionRequestModelBinderTest
         result.Request.Uid.Should().Be("mutation-uid-456");
         result.Request.Operation.Should().Be("UPDATE");
         result.Request.Object.Should().NotBeNull();
-        result.Request.Object!.Spec.Value.Should().Be("newvalue");
+        result.Request.Object.Spec.Value.Should().Be("newvalue");
         result.Request.Object.Spec.Timeout.Should().Be(TimeSpan.FromHours(1));
         result.Request.OldObject.Should().NotBeNull();
-        result.Request.OldObject!.Spec.Value.Should().Be("oldvalue");
+        result.Request.OldObject.Spec.Value.Should().Be("oldvalue");
         result.Request.OldObject.Spec.Timeout.Should().Be(TimeSpan.FromMinutes(30));
         result.Request.DryRun.Should().BeTrue();
     }
