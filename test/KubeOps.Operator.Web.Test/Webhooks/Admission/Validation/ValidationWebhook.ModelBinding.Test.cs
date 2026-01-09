@@ -4,6 +4,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Mime;
 using System.Text;
 
 using FluentAssertions;
@@ -59,7 +60,7 @@ public sealed class ValidationWebhookModelBindingTest
 
         var response = await client.PostAsync(
             path,
-            new StringContent(json, Encoding.UTF8, "application/json"),
+            new StringContent(json, Encoding.UTF8, MediaTypeNames.Application.Json),
             TestContext.Current.CancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -80,7 +81,7 @@ public sealed class ValidationWebhookModelBindingTest
 
         var response = await client.PostAsync(
             path,
-            new StringContent(json, Encoding.UTF8, "application/json"),
+            new StringContent(json, Encoding.UTF8, MediaTypeNames.Application.Json),
             TestContext.Current.CancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
