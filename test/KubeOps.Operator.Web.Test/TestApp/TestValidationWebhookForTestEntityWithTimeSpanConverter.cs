@@ -10,17 +10,15 @@ namespace KubeOps.Operator.Web.Test.TestApp;
 public sealed class TestValidationWebhookForTestEntityWithTimeSpanConverter : ValidationWebhook<TestEntityWithTimeSpanConverter>
 {
     public override ValidationResult Create(TestEntityWithTimeSpanConverter entity, bool dryRun)
-    {
-        return Success();
-    }
+        => Success();
 
     public override ValidationResult Update(TestEntityWithTimeSpanConverter oldentity, TestEntityWithTimeSpanConverter newEntity, bool dryRun)
     {
-        return Success();
+        return newEntity.Spec.Timeout < oldentity.Spec.Timeout
+            ? Fail("timeout-shortened")
+            : Success();
     }
 
     public override ValidationResult Delete(TestEntityWithTimeSpanConverter entity, bool dryRun)
-    {
-        return Success();
-    }
+        => Success("delete-validated");
 }

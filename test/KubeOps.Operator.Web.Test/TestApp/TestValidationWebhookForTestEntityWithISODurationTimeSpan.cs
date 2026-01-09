@@ -10,17 +10,15 @@ namespace KubeOps.Operator.Web.Test.TestApp;
 public sealed class TestValidationWebhookForTestEntityWithISODurationTimeSpan : ValidationWebhook<TestEntityWithISODurationTimeSpan>
 {
     public override ValidationResult Create(TestEntityWithISODurationTimeSpan entity, bool dryRun)
-    {
-        return Success();
-    }
+        => Success();
 
     public override ValidationResult Update(TestEntityWithISODurationTimeSpan oldEntity, TestEntityWithISODurationTimeSpan newEntity, bool dryRun)
     {
-        return Success();
+        return !string.Equals(oldEntity.Spec.Value, newEntity.Spec.Value, StringComparison.Ordinal)
+            ? Fail("value changed")
+            : Success();
     }
 
     public override ValidationResult Delete(TestEntityWithISODurationTimeSpan entity, bool dryRun)
-    {
-        return Success();
-    }
+        => Success("delete-validated");
 }

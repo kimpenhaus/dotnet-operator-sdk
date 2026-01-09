@@ -18,11 +18,13 @@ public sealed class TestMutationWebhookForTestEntityWithTimeSpanConverter : Muta
 
     public override MutationResult<TestEntityWithTimeSpanConverter> Update(TestEntityWithTimeSpanConverter oldEntity, TestEntityWithTimeSpanConverter newEntity, bool dryRun)
     {
-        return NoChanges();
+        newEntity.Spec.Value = $"updated-from-{oldEntity.Spec.Value}";
+        return Modified(newEntity);
     }
 
     public override MutationResult<TestEntityWithTimeSpanConverter> Delete(TestEntityWithTimeSpanConverter entity, bool dryRun)
     {
-        return NoChanges();
+        entity.Spec.Value = "deleted";
+        return Modified(entity);
     }
 }

@@ -36,5 +36,5 @@ public sealed class TimeSpanConverter : JsonConverter<TimeSpan>
         => TimeSpan.Parse(reader.GetString()!, CultureInfo.InvariantCulture);
 
     public override void Write(Utf8JsonWriter writer, TimeSpan value, JsonSerializerOptions options)
-        => throw new NotImplementedException();
+        => writer.WriteStringValue(value.ToString("c", CultureInfo.InvariantCulture));
 }

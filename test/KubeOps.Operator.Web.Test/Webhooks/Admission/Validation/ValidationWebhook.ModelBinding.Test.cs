@@ -4,14 +4,12 @@
 
 using System.Net;
 using System.Net.Http.Json;
-using System.Net.Mime;
 using System.Text;
 
 using FluentAssertions;
 
 using k8s;
 
-using KubeOps.Operator.Serialization;
 using KubeOps.Operator.Web.Test.TestApp;
 using KubeOps.Operator.Web.Webhooks.Admission;
 using KubeOps.Operator.Web.Webhooks.Admission.Validation;
@@ -22,185 +20,289 @@ namespace KubeOps.Operator.Web.Test.Webhooks.Admission.Validation;
 
 public sealed class ValidationWebhookModelBindingTest
 {
-    [Fact]
-    public async Task Should_Bind_CREATE_Request_With_TimeSpan_Correctly()
-    {
-        // Arrange
-        using var host = await TestHost.Create();
-        var client = host.GetTestClient();
+    // Shared helpers to reduce duplication across tests while keeping them focused and readable.
+    private static object CreateTestSpec(string value, string timeout)
+        => new
+        {
+            apiVersion = "test.kubeops.dev/v1",
+            kind = "TestEntity",
+            metadata = new { name = "test-entity", @namespace = "default" },
+            spec = new { value, timeout },
+        };
 
-        var admissionRequest = new
+    private static object CreateAdmissionReview(
+        string uid,
+        string operation,
+        bool dryRun,
+        object? @object = null,
+        object? oldObject = null)
+        => new
         {
             apiVersion = "admission.k8s.io/v1",
             kind = "AdmissionReview",
             request = new
             {
-                uid = "test-create-uid",
-                operation = "CREATE",
-                @object = new
-                {
-                    apiVersion = "test.kubeops.dev/v1",
-                    kind = "TestEntity",
-                    metadata = new { name = "test-entity", @namespace = "default" },
-                    spec = new { value = "createvalue", timeout = "PT10M" },
-                },
-                dryRun = false,
+                uid,
+                operation,
+                dryRun,
+                @object,
+                oldObject,
             },
         };
 
-        var json = KubernetesJsonSerializer.Serialize(admissionRequest, KubernetesJsonSerializer.SerializerOptions);
+    private static async Task<AdmissionResponse> PostAdmissionValidationAsync(
+        HttpClient client,
+        string path,
+        object admissionRequest)
+    {
+        var json = KubernetesJson.Serialize(admissionRequest);
 
-        // Act
         var response = await client.PostAsync(
-            $"/validate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
-            new StringContent(json, Encoding.UTF8, MediaTypeNames.Application.Json),
+            path,
+            new StringContent(json, Encoding.UTF8, "application/json"),
             TestContext.Current.CancellationToken);
 
-        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>(
             cancellationToken: TestContext.Current.CancellationToken);
         result.Should().NotBeNull();
-        result.Response.Uid.Should().Be("test-create-uid");
-        result.Response.Allowed.Should().BeTrue();
+
+        return result;
     }
 
-    [Fact]
-    public async Task Should_Bind_UPDATE_Request_With_TimeSpan_Correctly()
+    private static async Task<ValidationResult> PostValidationResultAsync(
+        HttpClient client,
+        string path,
+        object admissionRequest)
     {
-        // Arrange
-        using var host = await TestHost.Create();
-        var client = host.GetTestClient();
-
-        var admissionRequest = new
-        {
-            apiVersion = "admission.k8s.io/v1",
-            kind = "AdmissionReview",
-            request = new
-            {
-                uid = "test-update-uid",
-                operation = "UPDATE",
-                @object = new
-                {
-                    apiVersion = "test.kubeops.dev/v1",
-                    kind = "TestEntity",
-                    metadata = new { name = "test-entity", @namespace = "default" },
-                    spec = new { value = "newvalue", timeout = "PT1H30M" },
-                },
-                oldObject = new
-                {
-                    apiVersion = "test.kubeops.dev/v1",
-                    kind = "TestEntity",
-                    metadata = new { name = "test-entity", @namespace = "default" },
-                    spec = new { value = "oldvalue", timeout = "PT45M" },
-                },
-                dryRun = false,
-            },
-        };
-
         var json = KubernetesJson.Serialize(admissionRequest);
 
-        // Act
         var response = await client.PostAsync(
-            $"/validate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
+            path,
             new StringContent(json, Encoding.UTF8, "application/json"),
             TestContext.Current.CancellationToken);
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>(
-            cancellationToken: TestContext.Current.CancellationToken);
-        result.Should().NotBeNull();
-        result.Response.Uid.Should().Be("test-update-uid");
-        result.Response.Allowed.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task Should_Bind_DELETE_Request_With_TimeSpan_Correctly()
-    {
-        // Arrange
-        using var host = await TestHost.Create();
-        var client = host.GetTestClient();
-
-        var admissionRequest = new
-        {
-            apiVersion = "admission.k8s.io/v1",
-            kind = "AdmissionReview",
-            request = new
-            {
-                uid = "test-delete-uid",
-                operation = "DELETE",
-                oldObject = new
-                {
-                    apiVersion = "test.kubeops.dev/v1",
-                    kind = "TestEntity",
-                    metadata = new { name = "test-entity", @namespace = "default" },
-                    spec = new { value = "deletedvalue", timeout = "PT20M" },
-                },
-                dryRun = false,
-            },
-        };
-
-        var json = KubernetesJson.Serialize(admissionRequest);
-
-        // Act
-        var response = await client.PostAsync(
-            $"/validate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
-            new StringContent(json, Encoding.UTF8, "application/json"),
-            TestContext.Current.CancellationToken);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>(
-            cancellationToken: TestContext.Current.CancellationToken);
-        result.Should().NotBeNull();
-        result.Response.Uid.Should().Be("test-delete-uid");
-        result.Response.Allowed.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task Should_Handle_DryRun_Flag()
-    {
-        // Arrange
-        using var host = await TestHost.Create();
-        var client = host.GetTestClient();
-
-        var admissionRequest = new
-        {
-            apiVersion = "admission.k8s.io/v1",
-            kind = "AdmissionReview",
-            request = new
-            {
-                uid = "test-dryrun-uid",
-                operation = "CREATE",
-                @object = new
-                {
-                    apiVersion = "test.kubeops.dev/v1",
-                    kind = "TestEntity",
-                    metadata = new { name = "test-entity", @namespace = "default" },
-                    spec = new { value = "dryrunvalue", timeout = "PT5M" },
-                },
-                dryRun = true,
-            },
-        };
-
-        var json = KubernetesJson.Serialize(admissionRequest);
-
-        // Act
-        var response = await client.PostAsync(
-            $"/validate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
-            new StringContent(json, Encoding.UTF8, "application/json"),
-            TestContext.Current.CancellationToken);
-
-        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var result = await response.Content.ReadFromJsonAsync<ValidationResult>(
             cancellationToken: TestContext.Current.CancellationToken);
         result.Should().NotBeNull();
+
+        return result;
+    }
+
+    [Theory(DisplayName = "Validation webhook binds CREATE request with ISO-8601 TimeSpan correctly")]
+    [Trait("Category", "ValidationWebhookModelBinding")]
+    [InlineData("test-create-iso-uid", "PT10M", "createvalue")]
+    [InlineData("test-create-iso-uid-long", "PT1H30M", "othervalue")]
+    public async Task HandleAsync_CreateRequest_WithISODurationTimeSpanEntity_BindsAndValidatesSuccessfully(
+        string uid,
+        string timeout,
+        string value)
+    {
+        using var host = await TestHost.Create();
+        var client = host.GetTestClient();
+
+        var spec = CreateTestSpec(value, timeout);
+        var admissionRequest = CreateAdmissionReview(
+            uid: uid,
+            operation: "CREATE",
+            dryRun: false,
+            @object: spec);
+
+        var result = await PostAdmissionValidationAsync(
+            client,
+            $"/validate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
+            admissionRequest);
+
+        result.Response.Uid.Should().Be(uid);
+        result.Response.Allowed.Should().BeTrue();
+    }
+
+    [Theory(DisplayName = "Validation webhook binds UPDATE request with ISO-8601 TimeSpan correctly")]
+    [Trait("Category", "ValidationWebhookModelBinding")]
+    [InlineData("test-update-iso-uid", "same", "same", true)]
+    [InlineData("test-update-iso-uid-value-changed", "old", "new", false)]
+    public async Task HandleAsync_UpdateRequest_WithISODurationTimeSpanEntity_BindsAndValidatesSuccessfully(
+        string uid,
+        string oldValue,
+        string newValue,
+        bool expectedAllowed)
+    {
+        using var host = await TestHost.Create();
+        var client = host.GetTestClient();
+
+        var @object = CreateTestSpec(newValue, "PT1H30M");
+        var oldObject = CreateTestSpec(oldValue, "PT45M");
+        var admissionRequest = CreateAdmissionReview(
+            uid: uid,
+            operation: "UPDATE",
+            dryRun: false,
+            @object: @object,
+            oldObject: oldObject);
+
+        var result = await PostAdmissionValidationAsync(
+            client,
+            $"/validate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
+            admissionRequest);
+
+        result.Response.Uid.Should().Be(uid);
+        result.Response.Allowed.Should().Be(expectedAllowed);
+    }
+
+    [Theory(DisplayName = "Validation webhook binds DELETE request with ISO-8601 TimeSpan correctly")]
+    [Trait("Category", "ValidationWebhookModelBinding")]
+    [InlineData("test-delete-iso-uid", true)]
+    public async Task HandleAsync_DeleteRequest_WithISODurationTimeSpanEntity_BindsAndValidatesSuccessfully(
+        string uid,
+        bool expectedAllowed)
+    {
+        using var host = await TestHost.Create();
+        var client = host.GetTestClient();
+
+        var oldObject = CreateTestSpec("deletedvalue", "PT20M");
+        var admissionRequest = CreateAdmissionReview(
+            uid: uid,
+            operation: "DELETE",
+            dryRun: false,
+            oldObject: oldObject);
+
+        var result = await PostAdmissionValidationAsync(
+            client,
+            $"/validate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
+            admissionRequest);
+
+        result.Response.Uid.Should().Be(uid);
+        result.Response.Allowed.Should().Be(expectedAllowed);
+    }
+
+    [Fact(DisplayName = "Validation webhook respects dryRun flag for ISO-8601 entity")]
+    [Trait("Category", "ValidationWebhookModelBinding")]
+    public async Task HandleAsync_CreateRequest_WithISODurationTimeSpanEntityAndDryRun_BindsAndValidatesSuccessfully()
+    {
+        using var host = await TestHost.Create();
+        var client = host.GetTestClient();
+
+        var spec = CreateTestSpec("dryrunvalue", "PT5M");
+        var admissionRequest = CreateAdmissionReview(
+            uid: "test-dryrun-iso-uid",
+            operation: "CREATE",
+            dryRun: true,
+            @object: spec);
+
+        var result = await PostValidationResultAsync(
+            client,
+            $"/validate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
+            admissionRequest);
+
+        result.Valid.Should().BeTrue();
+    }
+
+    [Theory(DisplayName = "Validation webhook binds CREATE request with custom TimeSpan converter correctly")]
+    [Trait("Category", "ValidationWebhookModelBinding")]
+    [InlineData("test-create-converter-uid", "00:10:00", "createvalue")]
+    [InlineData("test-create-converter-uid-long", "01:30:00", "othervalue")]
+    public async Task HandleAsync_CreateRequest_WithTimeSpanConverterEntity_BindsAndValidatesSuccessfully(
+        string uid,
+        string timeout,
+        string value)
+    {
+        using var host = await TestHost.Create();
+        var client = host.GetTestClient();
+
+        var spec = CreateTestSpec(value, timeout);
+        var admissionRequest = CreateAdmissionReview(
+            uid: uid,
+            operation: "CREATE",
+            dryRun: false,
+            @object: spec);
+
+        var result = await PostAdmissionValidationAsync(
+            client,
+            $"/validate/{nameof(TestEntityWithTimeSpanConverter).ToLowerInvariant()}",
+            admissionRequest);
+
+        result.Response.Uid.Should().Be(uid);
+        result.Response.Allowed.Should().BeTrue();
+    }
+
+    [Theory(DisplayName = "Validation webhook binds UPDATE request with custom TimeSpan converter correctly")]
+    [Trait("Category", "ValidationWebhookModelBinding")]
+    [InlineData("test-update-converter-uid", 45, 60, true)]   // timeout increased
+    [InlineData("test-update-converter-uid-short", 45, 30, false)] // timeout shortened
+    public async Task HandleAsync_UpdateRequest_WithTimeSpanConverterEntity_BindsAndValidatesSuccessfully(
+        string uid,
+        int oldMinutes,
+        int newMinutes,
+        bool expectedAllowed)
+    {
+        using var host = await TestHost.Create();
+        var client = host.GetTestClient();
+
+        var @object = CreateTestSpec("newvalue", TimeSpan.FromMinutes(newMinutes).ToString("c"));
+        var oldObject = CreateTestSpec("oldvalue", TimeSpan.FromMinutes(oldMinutes).ToString("c"));
+        var admissionRequest = CreateAdmissionReview(
+            uid: uid,
+            operation: "UPDATE",
+            dryRun: false,
+            @object: @object,
+            oldObject: oldObject);
+
+        var result = await PostAdmissionValidationAsync(
+            client,
+            $"/validate/{nameof(TestEntityWithTimeSpanConverter).ToLowerInvariant()}",
+            admissionRequest);
+
+        result.Response.Uid.Should().Be(uid);
+        result.Response.Allowed.Should().Be(expectedAllowed);
+    }
+
+    [Theory(DisplayName = "Validation webhook binds DELETE request with custom TimeSpan converter correctly")]
+    [Trait("Category", "ValidationWebhookModelBinding")]
+    [InlineData("test-delete-converter-uid", true)]
+    public async Task HandleAsync_DeleteRequest_WithTimeSpanConverterEntity_BindsAndValidatesSuccessfully(
+        string uid,
+        bool expectedAllowed)
+    {
+        using var host = await TestHost.Create();
+        var client = host.GetTestClient();
+
+        var oldObject = CreateTestSpec("deletedvalue", "00:20:00");
+        var admissionRequest = CreateAdmissionReview(
+            uid: uid,
+            operation: "DELETE",
+            dryRun: false,
+            oldObject: oldObject);
+
+        var result = await PostAdmissionValidationAsync(
+            client,
+            $"/validate/{nameof(TestEntityWithTimeSpanConverter).ToLowerInvariant()}",
+            admissionRequest);
+
+        result.Response.Uid.Should().Be(uid);
+        result.Response.Allowed.Should().Be(expectedAllowed);
+    }
+
+    [Fact(DisplayName = "Validation webhook respects dryRun flag for TimeSpan converter entity")]
+    [Trait("Category", "ValidationWebhookModelBinding")]
+    public async Task HandleAsync_CreateRequest_WithTimeSpanConverterEntityAndDryRun_BindsAndValidatesSuccessfully()
+    {
+        using var host = await TestHost.Create();
+        var client = host.GetTestClient();
+
+        var spec = CreateTestSpec("dryrunvalue", "00:10:00");
+        var admissionRequest = CreateAdmissionReview(
+            uid: "test-dryrun-converter-uid",
+            operation: "CREATE",
+            dryRun: true,
+            @object: spec);
+
+        var result = await PostValidationResultAsync(
+            client,
+            $"/validate/{nameof(TestEntityWithTimeSpanConverter).ToLowerInvariant()}",
+            admissionRequest);
+
         result.Valid.Should().BeTrue();
     }
 }

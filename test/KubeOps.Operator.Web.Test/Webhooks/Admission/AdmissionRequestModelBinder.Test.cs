@@ -20,10 +20,10 @@ public sealed class AdmissionRequestModelBinderTest
     private const string ModelName = "request";
     private readonly AdmissionRequestModelBinder _binder = new();
 
-    [Fact]
-    public async Task Should_Bind_Valid_AdmissionRequest_With_ISODurationTimeSpan()
+    [Fact(DisplayName = "BindModelAsync binds AdmissionRequest with ISO-8601 duration correctly")]
+    [Trait("Category", "AdmissionRequestModelBinder")]
+    public async Task BindModelAsync_WithValidAdmissionRequestAndISODurationTimeSpan_BindsExpectedRequest()
     {
-        // Arrange
         const string expectedUid = "test-uid-123";
         const string expectedOperation = "CREATE";
         const string expectedValue = "some_value";
@@ -56,28 +56,30 @@ public sealed class AdmissionRequestModelBinderTest
             json,
             typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>));
 
-        // Act
         await _binder.BindModelAsync(bindingContext);
 
-        // Assert
-        bindingContext.Result.IsModelSet.Should().BeTrue();
+        bindingContext.Result.IsModelSet.Should().BeTrue("a valid admission review should result in a bound model");
         bindingContext.Result.Model.Should().BeOfType<AdmissionRequest<TestEntityWithISODurationTimeSpan>>();
 
-        var result = (AdmissionRequest<TestEntityWithISODurationTimeSpan>)bindingContext.Result.Model;
+        var result = (AdmissionRequest<TestEntityWithISODurationTimeSpan>)bindingContext.Result.Model!;
+
         result.Request.Should().NotBeNull();
         result.Request.Uid.Should().Be(expectedUid);
         result.Request.Operation.Should().Be(expectedOperation);
+
         result.Request.Object.Should().NotBeNull();
         result.Request.Object.Metadata.Name.Should().Be("test-entity");
         result.Request.Object.Spec.Value.Should().Be(expectedValue);
-        result.Request.Object.Spec.Timeout.Should().Be(TimeSpan.FromMinutes(5).Add(TimeSpan.FromSeconds(30)));
+        result.Request.Object.Spec.Timeout.Should().Be(
+            TimeSpan.FromMinutes(5).Add(TimeSpan.FromSeconds(30)));
+
         result.Request.DryRun.Should().BeTrue();
     }
 
-    [Fact]
-    public async Task Should_Bind_Valid_AdmissionRequest_With_TimeSpan()
+    [Fact(DisplayName = "BindModelAsync binds AdmissionRequest with TimeSpan correctly")]
+    [Trait("Category", "AdmissionRequestModelBinder")]
+    public async Task BindModelAsync_WithValidAdmissionRequestAndTimeSpan_BindsExpectedRequest()
     {
-        // Arrange
         const string expectedUid = "test-uid-456";
         const string expectedOperation = "DELETE";
         const string expectedValue = "some_value";
@@ -110,53 +112,51 @@ public sealed class AdmissionRequestModelBinderTest
             json,
             typeof(AdmissionRequest<TestEntityWithTimeSpanConverter>));
 
-        // Act
         await _binder.BindModelAsync(bindingContext);
 
-        // Assert
-        bindingContext.Result.IsModelSet.Should().BeTrue();
+        bindingContext.Result.IsModelSet.Should().BeTrue("a valid admission review should result in a bound model");
         bindingContext.Result.Model.Should().BeOfType<AdmissionRequest<TestEntityWithTimeSpanConverter>>();
 
-        var result = (AdmissionRequest<TestEntityWithTimeSpanConverter>)bindingContext.Result.Model;
+        var result = (AdmissionRequest<TestEntityWithTimeSpanConverter>)bindingContext.Result.Model!;
+
         result.Request.Should().NotBeNull();
         result.Request.Uid.Should().Be(expectedUid);
         result.Request.Operation.Should().Be(expectedOperation);
+
         result.Request.Object.Should().NotBeNull();
-        result.Request.Object.Metadata.Name.Should().Be("test-entity");
+        result.Request.Object!.Metadata.Name.Should().Be("test-entity");
         result.Request.Object.Spec.Value.Should().Be(expectedValue);
-        result.Request.Object.Spec.Timeout.Should().Be(TimeSpan.FromHours(5).Add(TimeSpan.FromMinutes(30)));
+        result.Request.Object.Spec.Timeout.Should().Be(
+            TimeSpan.FromHours(5).Add(TimeSpan.FromMinutes(30)));
+
         result.Request.DryRun.Should().BeTrue();
     }
 
-    [Fact]
-    public async Task Should_Handle_Empty_Value()
+    [Fact(DisplayName = "BindModelAsync does not set model for empty value")]
+    [Trait("Category", "AdmissionRequestModelBinder")]
+    public async Task BindModelAsync_WithEmptyValue_DoesNotSetModel()
     {
-        // Arrange
         var bindingContext = CreateBindingContext(
             string.Empty,
             typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>));
 
-        // Act
         await _binder.BindModelAsync(bindingContext);
 
-        // Assert
-        bindingContext.Result.IsModelSet.Should().BeFalse();
+        bindingContext.Result.IsModelSet.Should().BeFalse("an empty request body cannot be bound to an admission request");
         bindingContext.Result.Model.Should().BeNull();
     }
 
-    [Fact]
-    public async Task Should_Handle_Missing_Value()
+    [Fact(DisplayName = "BindModelAsync does not set model for missing value")]
+    [Trait("Category", "AdmissionRequestModelBinder")]
+    public async Task BindModelAsync_WithMissingValue_DoesNotSetModel()
     {
-        // Arrange
         var bindingContext = CreateBindingContext(
             null,
             typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>));
 
-        // Act
         await _binder.BindModelAsync(bindingContext);
 
-        // Assert
-        bindingContext.Result.IsModelSet.Should().BeFalse();
+        bindingContext.Result.IsModelSet.Should().BeFalse("a missing request body cannot be bound to an admission request");
         bindingContext.Result.Model.Should().BeNull();
     }
 

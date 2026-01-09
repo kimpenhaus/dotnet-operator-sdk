@@ -18,11 +18,13 @@ public sealed class TestMutationWebhookForTestEntityWithISODurationTimeSpan : Mu
 
     public override MutationResult<TestEntityWithISODurationTimeSpan> Update(TestEntityWithISODurationTimeSpan oldEntity, TestEntityWithISODurationTimeSpan newEntity, bool dryRun)
     {
-        return NoChanges();
+        newEntity.Spec.Value = $"updated-from-{oldEntity.Spec.Value}";
+        return Modified(newEntity);
     }
 
     public override MutationResult<TestEntityWithISODurationTimeSpan> Delete(TestEntityWithISODurationTimeSpan entity, bool dryRun)
     {
-        return NoChanges();
+        entity.Spec.Value = "deleted";
+        return Modified(entity);
     }
 }
