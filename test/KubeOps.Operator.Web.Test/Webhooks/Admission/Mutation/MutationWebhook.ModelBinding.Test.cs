@@ -49,13 +49,15 @@ public sealed class MutationWebhookModelBindingTest
 
         // Act
         var response = await client.PostAsync(
-            "/mutate/testentitywithisodurationtimespan",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            $"/mutate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
+            new StringContent(json, Encoding.UTF8, "application/json"),
+            TestContext.Current.CancellationToken);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>();
+        var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>(
+            cancellationToken: TestContext.Current.CancellationToken);
         result.Should().NotBeNull();
         result.Response.Uid.Should().Be("test-create-uid");
         result.Response.Allowed.Should().BeTrue();
@@ -98,13 +100,15 @@ public sealed class MutationWebhookModelBindingTest
 
         // Act
         var response = await client.PostAsync(
-            "/mutate/testentitywithisodurationtimespan",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            $"/mutate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
+            new StringContent(json, Encoding.UTF8, "application/json"),
+            TestContext.Current.CancellationToken);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>();
+        var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>(
+            cancellationToken: TestContext.Current.CancellationToken);
         result.Should().NotBeNull();
         result.Response.Uid.Should().Be("test-update-uid");
         result.Response.Allowed.Should().BeTrue();
@@ -140,13 +144,15 @@ public sealed class MutationWebhookModelBindingTest
 
         // Act
         var response = await client.PostAsync(
-            "/mutate/testentitywithisodurationtimespan",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            $"/mutate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
+            new StringContent(json, Encoding.UTF8, "application/json"),
+            TestContext.Current.CancellationToken);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>();
+        var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>(
+            cancellationToken: TestContext.Current.CancellationToken);
         result.Should().NotBeNull();
         result.Response.Uid.Should().Be("test-delete-uid");
         result.Response.Allowed.Should().BeTrue();
@@ -182,13 +188,15 @@ public sealed class MutationWebhookModelBindingTest
 
         // Act
         var response = await client.PostAsync(
-            "/mutate/testentitywithisodurationtimespan",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            $"/mutate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
+            new StringContent(json, Encoding.UTF8, "application/json"),
+            TestContext.Current.CancellationToken);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>();
+        var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>(
+            cancellationToken: TestContext.Current.CancellationToken);
         result.Should().NotBeNull();
         result.Response.Allowed.Should().BeTrue();
     }
@@ -223,13 +231,15 @@ public sealed class MutationWebhookModelBindingTest
 
         // Act
         var response = await client.PostAsync(
-            "/mutate/testentitywithisodurationtimespan",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            $"/mutate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
+            new StringContent(json, Encoding.UTF8, "application/json"),
+            TestContext.Current.CancellationToken);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>();
+        var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>(
+            cancellationToken: TestContext.Current.CancellationToken);
         result.Should().NotBeNull();
         result.Response.Uid.Should().Be("test-mutation-uid");
         result.Response.Allowed.Should().BeTrue();
