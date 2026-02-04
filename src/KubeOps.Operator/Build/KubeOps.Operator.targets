@@ -40,7 +40,8 @@
             <NoAnsi Condition="'$(KubeOpsNoAnsi)' == 'true' Or '$(KubeOpsIsCI)' == 'true'">--no-ansi</NoAnsi>
         </PropertyGroup>
 
-        <Exec WorkingDirectory="$(MSBuildProjectDirectory)" Command="$(KubeOpsCli) generate operator $(NoAnsi) --out $(KubeOpsConfigOut) $(DockerImage) $(DockerImageTag) $(OperatorName) $(MSBuildProjectFullPath)" />
+        <Exec WorkingDirectory="$(MSBuildProjectDirectory)"
+              Command="$(KubeOpsCli) generate operator $(NoAnsi) --out $(KubeOpsConfigOut) $(DockerImage) $(DockerImageTag) $(OperatorName) $(MSBuildProjectFullPath)" />
     </Target>
 
     <Target Name="GenerateOperatorResources"
@@ -56,7 +57,7 @@
         <Exec Condition="'$(KubeOpsCliSource)' == 'Default' And '$(CliInstalled)' != '0'"
               IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low"
               WorkingDirectory="$(MSBuildProjectDirectory)"
-              Command="dotnet tool run kubeops -h">
+              Command="dotnet tool run kubeops -- -h">
             <Output TaskParameter="ExitCode" PropertyName="LocalCliInstalled" />
         </Exec>
 
