@@ -10,7 +10,7 @@ namespace KubeOps.Operator.Web.Test.TestApp;
 public sealed class TestValidationWebhookForTestEntityWithTimeSpanConverter : ValidationWebhook<TestEntityWithTimeSpanConverter>
 {
     public override ValidationResult Create(TestEntityWithTimeSpanConverter entity, bool dryRun)
-        => Success();
+        => dryRun ? Success("dry-run") : Success();
 
     public override ValidationResult Update(TestEntityWithTimeSpanConverter oldentity, TestEntityWithTimeSpanConverter newEntity, bool dryRun)
     {

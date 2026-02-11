@@ -11,6 +11,11 @@ public sealed class TestMutationWebhookForTestEntityWithTimeSpanConverter : Muta
 {
     public override MutationResult<TestEntityWithTimeSpanConverter> Create(TestEntityWithTimeSpanConverter entity, bool dryRun)
     {
+        if (dryRun)
+        {
+            return NoChanges("dry-run");
+        }
+
         entity.Spec.Value = "mutated";
         entity.Spec.Timeout = TimeSpan.FromHours(1);
         return Modified(entity);

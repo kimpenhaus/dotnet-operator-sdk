@@ -11,6 +11,11 @@ public sealed class TestMutationWebhookForTestEntityWithISODurationTimeSpan : Mu
 {
     public override MutationResult<TestEntityWithISODurationTimeSpan> Create(TestEntityWithISODurationTimeSpan entity, bool dryRun)
     {
+        if (dryRun)
+        {
+            return NoChanges("dry-run");
+        }
+
         entity.Spec.Value = "mutated";
         entity.Spec.Timeout = TimeSpan.FromHours(1);
         return Modified(entity);

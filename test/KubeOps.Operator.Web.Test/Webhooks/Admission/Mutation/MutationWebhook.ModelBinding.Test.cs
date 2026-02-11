@@ -4,12 +4,8 @@
 
 using System.Net;
 using System.Net.Http.Json;
-using System.Net.Mime;
-using System.Text;
 
 using FluentAssertions;
-
-using k8s;
 
 using KubeOps.Operator.Web.Test.TestApp;
 using KubeOps.Operator.Web.Webhooks.Admission;
@@ -18,281 +14,59 @@ using Microsoft.AspNetCore.TestHost;
 
 namespace KubeOps.Operator.Web.Test.Webhooks.Admission.Mutation;
 
-public sealed class MutationWebhookModelBindingTest
+public sealed class MutationWebhookModelBindingTest : WebhookTestBase
 {
-    private static object CreateTestSpec(string value, string timeout)
-        => new
-        {
-            apiVersion = "test.kubeops.dev/v1",
-            kind = "TestEntity",
-            metadata = new { name = "test-entity", @namespace = "default" },
-            spec = new { value, timeout },
-        };
-
-    private static object CreateAdmissionReview(
+    [Theory(DisplayName = "Mutation webhook binds request correctly")]
+    [Trait("Category", "MutationWebhookModelBinding")]
+    [InlineData(nameof(TestEntityWithISODurationTimeSpan), "test-create-iso-uid", "CREATE", false, "createvalue", "PT10M")]
+    [InlineData(nameof(TestEntityWithISODurationTimeSpan), "test-update-iso-uid", "UPDATE", false, "newvalue", "PT1H30M")]
+    [InlineData(nameof(TestEntityWithISODurationTimeSpan), "test-delete-iso-uid", "DELETE", false, "deletedvalue", "PT20M")]
+    [InlineData(nameof(TestEntityWithISODurationTimeSpan), "test-dryrun-iso-uid", "CREATE", true, "dryrunvalue", "PT5M")]
+    [InlineData(nameof(TestEntityWithTimeSpanConverter), "test-create-converter-uid", "CREATE", false, "createvalue", "00:10:00")]
+    [InlineData(nameof(TestEntityWithTimeSpanConverter), "test-update-converter-uid", "UPDATE", false, "newvalue", "01:30:00")]
+    [InlineData(nameof(TestEntityWithTimeSpanConverter), "test-delete-converter-uid", "DELETE", false, "deletedvalue", "00:20:00")]
+    [InlineData(nameof(TestEntityWithTimeSpanConverter), "test-dryrun-converter-uid", "CREATE", true, "dryrunvalue", "00:05:00")]
+    public async Task HandleAsync_Request_BindsAndMutatesCorrectly(
+        string entityType,
         string uid,
         string operation,
         bool dryRun,
-        object? @object = null,
-        object? oldObject = null)
-        => new
-        {
-            apiVersion = "admission.k8s.io/v1",
-            kind = "AdmissionReview",
-            request = new
-            {
-                uid,
-                operation,
-                dryRun,
-                @object,
-                oldObject,
-            },
-        };
-
-    private static async Task<AdmissionResponse> PostMutationAsync(
-        HttpClient client,
-        string path,
-        object admissionRequest)
+        string value,
+        string timeout)
     {
-        var json = KubernetesJson.Serialize(admissionRequest);
+        using var host = await TestHost.Create();
+        var client = host.GetTestClient();
 
-        var response = await client.PostAsync(
-            path,
-            new StringContent(json, Encoding.UTF8, MediaTypeNames.Application.Json),
-            TestContext.Current.CancellationToken);
+        var spec = CreateTestSpec(value, timeout);
+        var admissionRequest = CreateAdmissionReview(
+            uid: uid,
+            operation: operation,
+            dryRun: dryRun,
+            @object: operation == "DELETE" ? null : spec,
+            oldObject: operation == "CREATE" ? null : spec);
+
+        var response = await PostWebhookAsync(
+            client,
+            $"/mutate/{entityType.ToLowerInvariant()}",
+            admissionRequest);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var result = await response.Content.ReadFromJsonAsync<AdmissionResponse>(
-            cancellationToken: TestContext.Current.CancellationToken);
+        var result = await response.Content
+            .ReadFromJsonAsync<AdmissionResponse>(
+                cancellationToken: TestContext.Current.CancellationToken);
         result.Should().NotBeNull();
 
-        return result;
-    }
-
-    [Theory(DisplayName = "Mutation webhook binds CREATE request with ISO-8601 TimeSpan correctly")]
-    [Trait("Category", "MutationWebhookModelBinding")]
-    [InlineData("test-create-iso-uid", "createvalue", "PT10M")]
-    [InlineData("test-create-iso-uid-long", "longvalue", "PT1H30M")]
-    public async Task HandleAsync_CreateRequest_WithISODurationTimeSpanEntity_BindsAndMutatesCorrectly(
-        string uid,
-        string value,
-        string timeout)
-    {
-        using var host = await TestHost.Create();
-        var client = host.GetTestClient();
-
-        var spec = CreateTestSpec(value, timeout);
-        var admissionRequest = CreateAdmissionReview(
-            uid: uid,
-            operation: "CREATE",
-            dryRun: false,
-            @object: spec);
-
-        var result = await PostMutationAsync(
-            client,
-            $"/mutate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
-            admissionRequest);
-
         result.Response.Uid.Should().Be(uid);
         result.Response.Allowed.Should().BeTrue();
-        result.Response.Patch.Should().NotBeNull("the mutation webhook should return a patch for modified entities");
-    }
 
-    [Fact(DisplayName = "Mutation webhook binds UPDATE request with ISO-8601 TimeSpan correctly")]
-    [Trait("Category", "MutationWebhookModelBinding")]
-    public async Task HandleAsync_UpdateRequest_WithISODurationTimeSpanEntity_BindsAndMutatesCorrectly()
-    {
-        using var host = await TestHost.Create();
-        var client = host.GetTestClient();
-
-        var @object = CreateTestSpec("newvalue", "PT1H30M");
-        var oldObject = CreateTestSpec("oldvalue", "PT45M");
-        var admissionRequest = CreateAdmissionReview(
-            uid: "test-update-iso-uid",
-            operation: "UPDATE",
-            dryRun: false,
-            @object: @object,
-            oldObject: oldObject);
-
-        var result = await PostMutationAsync(
-            client,
-            $"/mutate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
-            admissionRequest);
-
-        result.Response.Uid.Should().Be("test-update-iso-uid");
-        result.Response.Allowed.Should().BeTrue();
-        result.Response.Patch.Should().NotBeNull();
-    }
-
-    [Fact(DisplayName = "Mutation webhook binds DELETE request with ISO-8601 TimeSpan correctly")]
-    [Trait("Category", "MutationWebhookModelBinding")]
-    public async Task HandleAsync_DeleteRequest_WithISODurationTimeSpanEntity_BindsAndMutatesCorrectly()
-    {
-        using var host = await TestHost.Create();
-        var client = host.GetTestClient();
-
-        var oldObject = CreateTestSpec("deletedvalue", "PT20M");
-        var admissionRequest = CreateAdmissionReview(
-            uid: "test-delete-iso-uid",
-            operation: "DELETE",
-            dryRun: false,
-            oldObject: oldObject);
-
-        var result = await PostMutationAsync(
-            client,
-            $"/mutate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
-            admissionRequest);
-
-        result.Response.Uid.Should().Be("test-delete-iso-uid");
-        result.Response.Allowed.Should().BeTrue();
-        result.Response.Patch.Should().NotBeNull();
-    }
-
-    [Fact(DisplayName = "Mutation webhook respects dryRun flag for ISO-8601 entity")]
-    [Trait("Category", "MutationWebhookModelBinding")]
-    public async Task HandleAsync_CreateRequest_WithISODurationTimeSpanEntityAndDryRun_AllowsButDoesNotPersist()
-    {
-        using var host = await TestHost.Create();
-        var client = host.GetTestClient();
-
-        var spec = CreateTestSpec("dryrunvalue", "PT5M");
-        var admissionRequest = CreateAdmissionReview(
-            uid: "test-dryrun-iso-uid",
-            operation: "CREATE",
-            dryRun: true,
-            @object: spec);
-
-        var result = await PostMutationAsync(
-            client,
-            $"/mutate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
-            admissionRequest);
-
-        result.Response.Allowed.Should().BeTrue();
-    }
-
-    [Fact(DisplayName = "Mutation webhook applies mutations and returns patch for ISO-8601 entity")]
-    [Trait("Category", "MutationWebhookModelBinding")]
-    public async Task HandleAsync_CreateRequest_WithISODurationTimeSpanEntity_ReturnsPatchForMutatedEntity()
-    {
-        using var host = await TestHost.Create();
-        var client = host.GetTestClient();
-
-        var spec = CreateTestSpec("original", "PT10M");
-        var admissionRequest = CreateAdmissionReview(
-            uid: "test-mutation-iso-uid",
-            operation: "CREATE",
-            dryRun: false,
-            @object: spec);
-
-        var result = await PostMutationAsync(
-            client,
-            $"/mutate/{nameof(TestEntityWithISODurationTimeSpan).ToLowerInvariant()}",
-            admissionRequest);
-
-        result.Response.Uid.Should().Be("test-mutation-iso-uid");
-        result.Response.Allowed.Should().BeTrue();
-        result.Response.Patch.Should().NotBeNull();
-    }
-
-    [Theory(DisplayName = "Mutation webhook binds CREATE request with custom TimeSpan converter correctly")]
-    [Trait("Category", "MutationWebhookModelBinding")]
-    [InlineData("test-create-converter-uid", "createvalue", "00:10:00")]
-    [InlineData("test-create-converter-uid-long", "longvalue", "01:30:00")]
-    public async Task HandleAsync_CreateRequest_WithTimeSpanConverterEntity_BindsAndMutatesCorrectly(
-        string uid,
-        string value,
-        string timeout)
-    {
-        using var host = await TestHost.Create();
-        var client = host.GetTestClient();
-
-        var spec = CreateTestSpec(value, timeout);
-        var admissionRequest = CreateAdmissionReview(
-            uid: uid,
-            operation: "CREATE",
-            dryRun: false,
-            @object: spec);
-
-        var result = await PostMutationAsync(
-            client,
-            $"/mutate/{nameof(TestEntityWithTimeSpanConverter).ToLowerInvariant()}",
-            admissionRequest);
-
-        result.Response.Uid.Should().Be(uid);
-        result.Response.Allowed.Should().BeTrue();
-        result.Response.Patch.Should().NotBeNull();
-    }
-
-    [Fact(DisplayName = "Mutation webhook binds UPDATE request with custom TimeSpan converter correctly")]
-    [Trait("Category", "MutationWebhookModelBinding")]
-    public async Task HandleAsync_UpdateRequest_WithTimeSpanConverterEntity_BindsAndMutatesCorrectly()
-    {
-        using var host = await TestHost.Create();
-        var client = host.GetTestClient();
-
-        var @object = CreateTestSpec("newvalue", "01:30:00");
-        var oldObject = CreateTestSpec("oldvalue", "00:45:00");
-        var admissionRequest = CreateAdmissionReview(
-            uid: "test-update-converter-uid",
-            operation: "UPDATE",
-            dryRun: false,
-            @object: @object,
-            oldObject: oldObject);
-
-        var result = await PostMutationAsync(
-            client,
-            $"/mutate/{nameof(TestEntityWithTimeSpanConverter).ToLowerInvariant()}",
-            admissionRequest);
-
-        result.Response.Uid.Should().Be("test-update-converter-uid");
-        result.Response.Allowed.Should().BeTrue();
-        result.Response.Patch.Should().NotBeNull();
-    }
-
-    [Fact(DisplayName = "Mutation webhook binds DELETE request with custom TimeSpan converter correctly")]
-    [Trait("Category", "MutationWebhookModelBinding")]
-    public async Task HandleAsync_DeleteRequest_WithTimeSpanConverterEntity_BindsAndMutatesCorrectly()
-    {
-        using var host = await TestHost.Create();
-        var client = host.GetTestClient();
-
-        var oldObject = CreateTestSpec("deletedvalue", "00:20:00");
-        var admissionRequest = CreateAdmissionReview(
-            uid: "test-delete-converter-uid",
-            operation: "DELETE",
-            dryRun: false,
-            oldObject: oldObject);
-
-        var result = await PostMutationAsync(
-            client,
-            $"/mutate/{nameof(TestEntityWithTimeSpanConverter).ToLowerInvariant()}",
-            admissionRequest);
-
-        result.Response.Uid.Should().Be("test-delete-converter-uid");
-        result.Response.Allowed.Should().BeTrue();
-        result.Response.Patch.Should().NotBeNull();
-    }
-
-    [Fact(DisplayName = "Mutation webhook respects dryRun flag for custom TimeSpan converter entity")]
-    [Trait("Category", "MutationWebhookModelBinding")]
-    public async Task HandleAsync_CreateRequest_WithTimeSpanConverterEntityAndDryRun_AllowsButDoesNotPersist()
-    {
-        using var host = await TestHost.Create();
-        var client = host.GetTestClient();
-
-        var spec = CreateTestSpec("dryrunvalue", "00:05:00");
-        var admissionRequest = CreateAdmissionReview(
-            uid: "test-dryrun-converter-uid",
-            operation: "CREATE",
-            dryRun: true,
-            @object: spec);
-
-        var result = await PostMutationAsync(
-            client,
-            $"/mutate/{nameof(TestEntityWithTimeSpanConverter).ToLowerInvariant()}",
-            admissionRequest);
-
-        result.Response.Allowed.Should().BeTrue();
+        if (dryRun)
+        {
+            result.Response.Warnings.Should().Contain("dry-run");
+            result.Response.Patch.Should().BeNull("no patch should be returned during dry run if the webhook respects the flag");
+        }
+        else
+        {
+            result.Response.Patch.Should().NotBeNull("the mutation webhook should return a patch for modified entities");
+        }
     }
 }

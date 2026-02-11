@@ -20,15 +20,22 @@ public sealed class AdmissionRequestModelBinderTest
     private const string ModelName = "request";
     private readonly AdmissionRequestModelBinder _binder = new();
 
-    [Fact(DisplayName = "BindModelAsync binds AdmissionRequest with ISO-8601 duration correctly")]
+    [Theory(DisplayName = "BindModelAsync binds AdmissionRequest correctly")]
     [Trait("Category", "AdmissionRequestModelBinder")]
-    public async Task BindModelAsync_WithValidAdmissionRequestAndISODurationTimeSpan_BindsExpectedRequest()
+    [InlineData(typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>), "PT5M30S", 0, 5, 30)]
+    [InlineData(typeof(AdmissionRequest<TestEntityWithTimeSpanConverter>), "05:30:00", 5, 30, 0)]
+    public async Task BindModelAsync_WithValidAdmissionRequest_BindsExpectedRequest(
+        Type modelType,
+        string timeout,
+        int hours,
+        int minutes,
+        int seconds)
     {
-        const string expectedUid = "test-uid-123";
+        const string expectedUid = "test-uid";
         const string expectedOperation = "CREATE";
         const string expectedValue = "some_value";
 
-        const string json = $$"""
+        var json = $$"""
                             {
                               "apiVersion": "admission.k8s.io/v1",
                               "kind": "AdmissionReview",
@@ -44,7 +51,7 @@ public sealed class AdmissionRequestModelBinderTest
                                   },
                                   "spec": {
                                     "value": "{{expectedValue}}",
-                                    "timeout": "PT5M30S"
+                                    "timeout": "{{timeout}}"
                                   }
                                 },
                                 "dryRun": true
@@ -52,84 +59,34 @@ public sealed class AdmissionRequestModelBinderTest
                             }
                             """;
 
-        var bindingContext = CreateBindingContext(
-            json,
-            typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>));
+        var bindingContext = CreateBindingContext(json, modelType);
 
         await _binder.BindModelAsync(bindingContext);
 
         bindingContext.Result.IsModelSet.Should().BeTrue("a valid admission review should result in a bound model");
-        bindingContext.Result.Model.Should().BeOfType<AdmissionRequest<TestEntityWithISODurationTimeSpan>>();
+        bindingContext.Result.Model.Should().NotBeNull().And.BeOfType(modelType);
+        var model = bindingContext.Result.Model!;
 
-        var result = (AdmissionRequest<TestEntityWithISODurationTimeSpan>)bindingContext.Result.Model!;
-
-        result.Request.Should().NotBeNull();
-        result.Request.Uid.Should().Be(expectedUid);
-        result.Request.Operation.Should().Be(expectedOperation);
-
-        result.Request.Object.Should().NotBeNull();
-        result.Request.Object.Metadata.Name.Should().Be("test-entity");
-        result.Request.Object.Spec.Value.Should().Be(expectedValue);
-        result.Request.Object.Spec.Timeout.Should().Be(
-            TimeSpan.FromMinutes(5).Add(TimeSpan.FromSeconds(30)));
-
-        result.Request.DryRun.Should().BeTrue();
-    }
-
-    [Fact(DisplayName = "BindModelAsync binds AdmissionRequest with TimeSpan correctly")]
-    [Trait("Category", "AdmissionRequestModelBinder")]
-    public async Task BindModelAsync_WithValidAdmissionRequestAndTimeSpan_BindsExpectedRequest()
-    {
-        const string expectedUid = "test-uid-456";
-        const string expectedOperation = "DELETE";
-        const string expectedValue = "some_value";
-
-        const string json = $$"""
-                            {
-                              "apiVersion": "admission.k8s.io/v1",
-                              "kind": "AdmissionReview",
-                              "request": {
-                                "uid": "{{expectedUid}}",
-                                "operation": "{{expectedOperation}}",
-                                "object": {
-                                  "apiVersion": "test.kubeops.dev/v1",
-                                  "kind": "TestEntity",
-                                  "metadata": {
-                                    "name": "test-entity",
-                                    "namespace": "default"
-                                  },
-                                  "spec": {
-                                    "value": "{{expectedValue}}",
-                                    "timeout": "05:30:00"
-                                  }
-                                },
-                                "dryRun": true
-                              }
-                            }
-                            """;
-
-        var bindingContext = CreateBindingContext(
-            json,
-            typeof(AdmissionRequest<TestEntityWithTimeSpanConverter>));
-
-        await _binder.BindModelAsync(bindingContext);
-
-        bindingContext.Result.IsModelSet.Should().BeTrue("a valid admission review should result in a bound model");
-        bindingContext.Result.Model.Should().BeOfType<AdmissionRequest<TestEntityWithTimeSpanConverter>>();
-
-        var result = (AdmissionRequest<TestEntityWithTimeSpanConverter>)bindingContext.Result.Model!;
-
-        result.Request.Should().NotBeNull();
-        result.Request.Uid.Should().Be(expectedUid);
-        result.Request.Operation.Should().Be(expectedOperation);
-
-        result.Request.Object.Should().NotBeNull();
-        result.Request.Object!.Metadata.Name.Should().Be("test-entity");
-        result.Request.Object.Spec.Value.Should().Be(expectedValue);
-        result.Request.Object.Spec.Timeout.Should().Be(
-            TimeSpan.FromHours(5).Add(TimeSpan.FromMinutes(30)));
-
-        result.Request.DryRun.Should().BeTrue();
+        if (modelType == typeof(AdmissionRequest<TestEntityWithISODurationTimeSpan>))
+        {
+            var result = (AdmissionRequest<TestEntityWithISODurationTimeSpan>)model;
+            result.Request.Uid.Should().Be(expectedUid);
+            result.Request.Operation.Should().Be(expectedOperation);
+            result.Request.DryRun.Should().BeTrue();
+            result.Request.Object!.Metadata.Name.Should().Be("test-entity");
+            result.Request.Object.Spec.Value.Should().Be(expectedValue);
+            result.Request.Object.Spec.Timeout.Should().Be(new(hours, minutes, seconds));
+        }
+        else if (modelType == typeof(AdmissionRequest<TestEntityWithTimeSpanConverter>))
+        {
+            var result = (AdmissionRequest<TestEntityWithTimeSpanConverter>)model;
+            result.Request.Uid.Should().Be(expectedUid);
+            result.Request.Operation.Should().Be(expectedOperation);
+            result.Request.DryRun.Should().BeTrue();
+            result.Request.Object!.Metadata.Name.Should().Be("test-entity");
+            result.Request.Object.Spec.Value.Should().Be(expectedValue);
+            result.Request.Object.Spec.Timeout.Should().Be(new(hours, minutes, seconds));
+        }
     }
 
     [Fact(DisplayName = "BindModelAsync does not set model for empty value")]
