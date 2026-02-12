@@ -12,9 +12,9 @@ using k8s.Models;
 
 using KubeOps.Abstractions.Builder;
 using KubeOps.Abstractions.Entities;
-using KubeOps.Abstractions.Reconciliation;
 using KubeOps.KubernetesClient;
 using KubeOps.Operator.Logging;
+using KubeOps.Operator.Queue;
 
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -24,7 +24,7 @@ namespace KubeOps.Operator.Watcher;
 public class ResourceWatcher<TEntity>(
     ActivitySource activitySource,
     ILogger<ResourceWatcher<TEntity>> logger,
-    IReconciler<TEntity> reconciler,
+    ITimedEntityQueue<TEntity> entityQueue,
     OperatorSettings settings,
     IEntityLabelSelector<TEntity> labelSelector,
     IKubernetesClient client)
@@ -125,10 +125,13 @@ public class ResourceWatcher<TEntity>(
         }
     }
 
-    protected virtual async Task<ReconciliationResult<TEntity>> OnEventAsync(WatchEventType eventType, TEntity entity, CancellationToken cancellationToken)
-        => await reconciler.Reconcile(
-            ReconciliationContext<TEntity>.CreateFromApiServerEvent(entity, eventType),
-            cancellationToken);
+    protected virtual async Task OnEventAsync(WatchEventType eventType, TEntity entity, CancellationToken cancellationToken)
+        => await entityQueue
+            .Enqueue(
+                entity,
+                eventType.ToRequeueType(),
+                TimeSpan.Zero,
+                cancellationToken);
 
     private async Task WatchClientEventsAsync(CancellationToken stoppingToken)
     {
@@ -161,40 +164,29 @@ public class ResourceWatcher<TEntity>(
                         continue;
                     }
 
-                    try
-                    {
-                        var result = await OnEventAsync(type, entity, stoppingToken);
-
-                        if (!result.IsSuccess)
-                        {
-                            logger.LogError(
-                                result.Error,
-                                "Reconciliation of {EventType} for {Kind}/{Name} failed with message '{Message}'.",
-                                type,
-                                entity.Kind,
-                                entity.Name(),
-                                result.ErrorMessage);
-                        }
-                    }
-                    catch (KubernetesException e) when (e.Status.Code is (int)HttpStatusCode.GatewayTimeout)
-                    {
-                        logger.LogDebug(e, "Watch restarting due to 504 Gateway Timeout.");
-                        break;
-                    }
-                    catch (KubernetesException e) when (e.Status.Code is (int)HttpStatusCode.Gone)
-                    {
-                        // Special handling when our resource version is outdated.
-                        throw;
-                    }
-                    catch (Exception e)
-                    {
-                        logger.LogError(
-                            e,
-                            "Reconciliation of {EventType} for {Kind}/{Name} failed.",
-                            type,
-                            entity.Kind,
-                            entity.Name());
-                    }
+                    //// try
+                    //// {
+                    await OnEventAsync(type, entity, stoppingToken);
+                    //// }
+                    //// catch (KubernetesException e) when (e.Status.Code is (int)HttpStatusCode.GatewayTimeout)
+                    //// {
+                    ////     logger.LogDebug(e, "Watch restarting due to 504 Gateway Timeout.");
+                    ////     break;
+                    //// }
+                    //// catch (KubernetesException e) when (e.Status.Code is (int)HttpStatusCode.Gone)
+                    //// {
+                    ////     // Special handling when our resource version is outdated.
+                    ////     throw;
+                    //// }
+                    //// catch (Exception e)
+                    //// {
+                    ////     logger.LogError(
+                    ////         e,
+                    ////         "Reconciliation of {EventType} for {Kind}/{Name} failed.",
+                    ////         type,
+                    ////         entity.Kind,
+                    ////         entity.Name());
+                    //// }
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

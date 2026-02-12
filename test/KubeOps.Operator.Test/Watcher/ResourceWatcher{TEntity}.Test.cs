@@ -10,8 +10,8 @@ using k8s.Models;
 
 using KubeOps.Abstractions.Builder;
 using KubeOps.Abstractions.Entities;
-using KubeOps.Abstractions.Reconciliation;
 using KubeOps.KubernetesClient;
+using KubeOps.Operator.Queue;
 using KubeOps.Operator.Watcher;
 
 using Microsoft.Extensions.Logging;
@@ -25,10 +25,10 @@ public sealed class ResourceWatcherTest
     [Fact]
     public async Task Restarting_Watcher_Should_Trigger_New_Watch()
     {
-        // Arrange.
+        // Arrange
         var activitySource = new ActivitySource("unit-test");
         var logger = Mock.Of<ILogger<ResourceWatcher<V1Pod>>>();
-        var reconciler = Mock.Of<IReconciler<V1Pod>>();
+        var timedEntityQueue = Mock.Of<ITimedEntityQueue<V1Pod>>();
         var operatorSettings = new OperatorSettings { Namespace = "unit-test" };
         var kubernetesClient = Mock.Of<IKubernetesClient>();
         var labelSelector = new DefaultEntityLabelSelector<V1Pod>();
@@ -40,22 +40,28 @@ public sealed class ResourceWatcherTest
         var resourceWatcher = new ResourceWatcher<V1Pod>(
             activitySource,
             logger,
-            reconciler,
+            timedEntityQueue,
             operatorSettings,
             labelSelector,
             kubernetesClient);
 
-        // Act.
-        // Start and stop the watcher.
+        // Act
+        // Start and stop the watcher
         await resourceWatcher.StartAsync(CancellationToken.None);
         await resourceWatcher.StopAsync(CancellationToken.None);
 
-        // Restart the watcher.
+        // Restart the watcher
         await resourceWatcher.StartAsync(CancellationToken.None);
 
-        // Assert.
+        // Assert
         Mock.Get(kubernetesClient)
-            .Verify(client => client.WatchAsync<V1Pod>("unit-test", null, null, true, It.IsAny<CancellationToken>()), Times.Exactly(2));
+            .Verify(client => client.WatchAsync<V1Pod>(
+                    "unit-test",
+                    null,
+                    null,
+                    true,
+                    It.IsAny<CancellationToken>()),
+                Times.Exactly(2));
     }
 
     private static async IAsyncEnumerable<T> WaitForCancellationAsync<T>([EnumeratorCancellation] CancellationToken cancellationToken)

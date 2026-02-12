@@ -12,6 +12,7 @@ using KubeOps.Abstractions.Builder;
 using KubeOps.Abstractions.Entities;
 using KubeOps.Abstractions.Reconciliation;
 using KubeOps.KubernetesClient;
+using KubeOps.Operator.Queue;
 
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -21,7 +22,7 @@ namespace KubeOps.Operator.Watcher;
 internal sealed class LeaderAwareResourceWatcher<TEntity>(
     ActivitySource activitySource,
     ILogger<LeaderAwareResourceWatcher<TEntity>> logger,
-    IReconciler<TEntity> reconciler,
+    ITimedEntityQueue<TEntity> entityQueue,
     OperatorSettings settings,
     IEntityLabelSelector<TEntity> labelSelector,
     IKubernetesClient client,
@@ -30,7 +31,7 @@ internal sealed class LeaderAwareResourceWatcher<TEntity>(
     : ResourceWatcher<TEntity>(
         activitySource,
         logger,
-        reconciler,
+        entityQueue,
         settings,
         labelSelector,
         client)
