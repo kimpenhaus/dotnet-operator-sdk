@@ -192,15 +192,19 @@ internal sealed class EntityRequeueBackgroundService<TEntity>(
 
             await Task.WhenAll(tasks);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
-            logger.LogInformation("Queue processing cancelled during shutdown.");
+            logger.LogInformation(ex, "Queue processing cancelled during shutdown.");
         }
+#pragma warning disable CA2254, S2139
         catch (Exception ex)
         {
+            // Log and rethrow is intentional: we want to log the error for diagnostics
+            // AND signal the hosting infrastructure that the service has failed critically
             logger.LogCritical(ex, "Fatal error in queue processing. Service will stop.");
             throw;
         }
+#pragma warning restore CA2254, S2139
     }
 
     /// <summary>
@@ -227,7 +231,6 @@ internal sealed class EntityRequeueBackgroundService<TEntity>(
     {
         var uid = entry.Entity.Uid();
         var uidLock = _uidLocks.GetOrAdd(uid, _ => new(1, 1));
-        var lockAcquired = false;
 
         try
         {
@@ -250,8 +253,7 @@ internal sealed class EntityRequeueBackgroundService<TEntity>(
                 await uidLock.WaitAsync(cancellationToken);
             }
 
-            lockAcquired = true;
-
+            // At this point, the lock is always acquired (either from switch or WaitAsync above)
             try
             {
                 logger.LogDebug(
@@ -270,10 +272,7 @@ internal sealed class EntityRequeueBackgroundService<TEntity>(
             }
             finally
             {
-                if (lockAcquired)
-                {
-                    uidLock.Release();
-                }
+                uidLock.Release();
             }
         }
         catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
