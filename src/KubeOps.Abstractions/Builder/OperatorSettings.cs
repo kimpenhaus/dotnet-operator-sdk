@@ -85,6 +85,31 @@ public sealed partial class OperatorSettings
     /// </summary>
     public bool AutoDetachFinalizers { get; set; } = true;
 
+    /// <summary>
+    /// Gets or sets the configuration options for parallel reconciliation processing.
+    /// </summary>
+    /// <value>
+    /// The configuration options that control how reconciliation requests are processed in parallel,
+    /// including the maximum concurrency level and the strategy for handling conflicts when the same
+    /// entity is being reconciled multiple times. The default is a new instance with default values.
+    /// </value>
+    /// <remarks>
+    /// <para>
+    /// These options enable fine-grained control over the reconciliation loop's parallelism and
+    /// concurrency behavior. The settings affect how the operator balances throughput (processing
+    /// multiple entities simultaneously) with consistency (preventing race conditions on individual entities).
+    /// </para>
+    /// <para>
+    /// By default, the operator uses <see cref="ParallelReconciliationConflictStrategy.Discard"/>
+    /// and allows up to <c>Environment.ProcessorCount * 2</c> concurrent reconciliations.
+    /// Adjust these values based on your reconciliation logic complexity, external API rate limits,
+    /// and cluster resource constraints.
+    /// </para>
+    /// </remarks>
+    /// <seealso cref="ParallelReconciliationOptions"/>
+    /// <seealso cref="ParallelReconciliationConflictStrategy"/>
+    public ParallelReconciliationOptions ParallelReconciliationOptions { get; set; } = new();
+
     [GeneratedRegex(@"(\W|_)", RegexOptions.CultureInvariant)]
     private static partial Regex OperatorNameRegex();
 }
