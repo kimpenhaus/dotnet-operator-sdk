@@ -21,27 +21,26 @@ namespace KubeOps.Abstractions.Builder;
 /// </remarks>
 /// <example>
 /// <code language="csharp">
-/// // Example 1: Using Discard strategy (RequeueDelay is not needed)
+/// // Example 1: Using default WaitForCompletion strategy
 /// var options1 = new ParallelReconciliationOptions
+/// {
+///     MaxParallelReconciliations = 10
+///     // ConflictStrategy defaults to WaitForCompletion
+/// };
+///
+/// // Example 2: Using Discard strategy for higher throughput
+/// var options2 = new ParallelReconciliationOptions
 /// {
 ///     MaxParallelReconciliations = 10,
 ///     ConflictStrategy = ParallelReconciliationConflictStrategy.Discard
 /// };
 ///
-/// // Example 2: Using RequeueAfterDelay strategy with custom delay
-/// var options2 = new ParallelReconciliationOptions
+/// // Example 3: Using RequeueAfterDelay strategy with custom delay
+/// var options3 = new ParallelReconciliationOptions
 /// {
 ///     MaxParallelReconciliations = 10,
 ///     ConflictStrategy = ParallelReconciliationConflictStrategy.RequeueAfterDelay,
 ///     RequeueDelay = TimeSpan.FromSeconds(3) // Optional, defaults to 5 seconds
-/// };
-///
-/// // Example 3: Using RequeueAfterDelay strategy with default delay
-/// var options3 = new ParallelReconciliationOptions
-/// {
-///     MaxParallelReconciliations = 10,
-///     ConflictStrategy = ParallelReconciliationConflictStrategy.RequeueAfterDelay
-///     // RequeueDelay not specified, will use default of 5 seconds
 /// };
 /// </code>
 /// </example>
@@ -73,7 +72,7 @@ public sealed record ParallelReconciliationOptions
     /// </summary>
     /// <value>
     /// One of the enumeration values that specifies how to handle concurrent reconciliation attempts for the same entity.
-    /// The default is <see cref="ParallelReconciliationConflictStrategy.Discard"/>.
+    /// The default is <see cref="ParallelReconciliationConflictStrategy.WaitForCompletion"/>.
     /// </value>
     /// <remarks>
     /// <para>
@@ -83,26 +82,26 @@ public sealed record ParallelReconciliationOptions
     /// <list type="bullet">
     /// <item>
     /// <description>
+    /// <see cref="ParallelReconciliationConflictStrategy.WaitForCompletion"/>: Blocks until the current reconciliation
+    /// completes, then processes the request sequentially. This ensures no reconciliation requests are lost.
+    /// </description>
+    /// </item>
+    /// <item>
+    /// <description>
     /// <see cref="ParallelReconciliationConflictStrategy.Discard"/>: Ignores the new request, assuming the current
-    /// reconciliation will handle the latest state.
+    /// reconciliation will handle the latest state. This is the most performant option.
     /// </description>
     /// </item>
     /// <item>
     /// <description>
     /// <see cref="ParallelReconciliationConflictStrategy.RequeueAfterDelay"/>: Requeues the request to be processed
-    /// after the configured <see cref="RequeueDelay"/>, ensuring no updates are lost.
-    /// </description>
-    /// </item>
-    /// <item>
-    /// <description>
-    /// <see cref="ParallelReconciliationConflictStrategy.WaitForCompletion"/>: Blocks until the current reconciliation
-    /// completes, then processes the request sequentially.
+    /// after the configured <see cref="RequeueDelay"/>, ensuring no updates are lost while avoiding immediate blocking.
     /// </description>
     /// </item>
     /// </list>
     /// </remarks>
     /// <seealso cref="ParallelReconciliationConflictStrategy"/>
-    public ParallelReconciliationConflictStrategy ConflictStrategy { get; set; } = ParallelReconciliationConflictStrategy.Discard;
+    public ParallelReconciliationConflictStrategy ConflictStrategy { get; set; } = ParallelReconciliationConflictStrategy.WaitForCompletion;
 
     /// <summary>
     /// Gets or sets the delay before requeueing an entity when <see cref="ConflictStrategy"/> is set to <see cref="ParallelReconciliationConflictStrategy.RequeueAfterDelay"/>.

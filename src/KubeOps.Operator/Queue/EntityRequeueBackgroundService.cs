@@ -2,11 +2,13 @@
 // The .NET Foundation licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 
 using k8s;
 using k8s.Models;
 
+using KubeOps.Abstractions.Builder;
 using KubeOps.Abstractions.Reconciliation;
 using KubeOps.KubernetesClient;
 using KubeOps.Operator.Logging;
@@ -26,12 +28,18 @@ namespace KubeOps.Operator.Queue;
 public class EntityRequeueBackgroundService<TEntity>(
     ActivitySource activitySource,
     IKubernetesClient client,
+    OperatorSettings operatorSettings,
     ITimedEntityQueue<TEntity> queue,
     IReconciler<TEntity> reconciler,
     ILogger<EntityRequeueBackgroundService<TEntity>> logger) : IHostedService, IDisposable, IAsyncDisposable
     where TEntity : IKubernetesObject<V1ObjectMeta>
 {
     private readonly CancellationTokenSource _cts = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _uidLocks = new();
+    private readonly SemaphoreSlim _parallelismSemaphore = new(
+        operatorSettings.ParallelReconciliationOptions.MaxParallelReconciliations,
+        operatorSettings.ParallelReconciliationOptions.MaxParallelReconciliations);
+
     private bool _disposed;
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -81,6 +89,14 @@ public class EntityRequeueBackgroundService<TEntity>(
         }
 
         _cts.Dispose();
+        _parallelismSemaphore.Dispose();
+
+        foreach (var lockItem in _uidLocks.Values)
+        {
+            lockItem.Dispose();
+        }
+
+        _uidLocks.Clear();
         client.Dispose();
         queue.Dispose();
 
@@ -95,6 +111,14 @@ public class EntityRequeueBackgroundService<TEntity>(
         }
 
         await CastAndDispose(_cts);
+        await CastAndDispose(_parallelismSemaphore);
+
+        foreach (var lockItem in _uidLocks.Values)
+        {
+            await CastAndDispose(lockItem);
+        }
+
+        _uidLocks.Clear();
         await CastAndDispose(client);
         await CastAndDispose(queue);
 
@@ -138,30 +162,143 @@ public class EntityRequeueBackgroundService<TEntity>(
 
     private async Task WatchAsync(CancellationToken cancellationToken)
     {
-        await foreach (var entry in queue)
+        var tasks = new List<Task>();
+
+        await foreach (var queueEntry in queue.WithCancellation(cancellationToken))
         {
+            var task = Task.Run(
+                async () =>
+                {
+                    await _parallelismSemaphore.WaitAsync(cancellationToken);
+                    try
+                    {
+                        await ProcessEntryAsync(queueEntry, cancellationToken);
+                    }
+                    finally
+                    {
+                        _parallelismSemaphore.Release();
+                    }
+                },
+                cancellationToken);
+
+            tasks.Add(task);
+            tasks.RemoveAll(t => t.IsCompleted);
+        }
+
+        await Task.WhenAll(tasks);
+    }
+
+    /// <summary>
+    /// Processes a requeue entry with UID-based locking to prevent concurrent processing of the same entity.
+    /// </summary>
+    /// <param name="entry">The requeue entry containing the entity to process.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+    private async Task ProcessEntryAsync(RequeueEntry<TEntity> entry, CancellationToken cancellationToken)
+    {
+        var uid = entry.Entity.Uid();
+
+        var uidLock = _uidLocks.GetOrAdd(uid, _ => new(1, 1));
+
+        try
+        {
+            var canAcquireLock = operatorSettings.ParallelReconciliationOptions.ConflictStrategy switch
+            {
+                ParallelReconciliationConflictStrategy.Discard => await uidLock.WaitAsync(0, cancellationToken),
+                ParallelReconciliationConflictStrategy.RequeueAfterDelay => await uidLock.WaitAsync(0, cancellationToken),
+                ParallelReconciliationConflictStrategy.WaitForCompletion => true,
+                _ => throw new NotSupportedException($"Conflict strategy {operatorSettings.ParallelReconciliationOptions.ConflictStrategy} is not supported."),
+            };
+
+            if (!canAcquireLock)
+            {
+                await HandleLockingConflictAsync(entry, uid, cancellationToken);
+                return;
+            }
+
+            if (operatorSettings.ParallelReconciliationOptions.ConflictStrategy is ParallelReconciliationConflictStrategy.WaitForCompletion)
+            {
+                await uidLock.WaitAsync(cancellationToken);
+            }
+
             try
             {
+                logger.LogDebug(
+                    "Starting reconciliation for {Kind}/{Name} (UID: {Uid}).",
+                    entry.Entity.Kind,
+                    entry.Entity.Name(),
+                    uid);
+
                 await ReconcileSingleAsync(entry, cancellationToken);
-            }
-            catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
-            {
-                logger.LogError(
-                    e,
-                    """Queued reconciliation for the entity of type {ResourceType} for "{Kind}/{Name}" failed.""",
-                    typeof(TEntity).Name,
+
+                logger.LogDebug(
+                    "Completed reconciliation for {Kind}/{Name} (UID: {Uid}).",
                     entry.Entity.Kind,
-                    entry.Entity.Name());
+                    entry.Entity.Name(),
+                    uid);
             }
-            catch (Exception e)
+            finally
             {
-                logger.LogError(
-                    e,
-                    """Queued reconciliation for the entity of type {ResourceType} for "{Kind}/{Name}" failed.""",
-                    typeof(TEntity).Name,
-                    entry.Entity.Kind,
-                    entry.Entity.Name());
+                uidLock.Release();
             }
+        }
+        catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogError(
+                e,
+                """Queued reconciliation for the entity of type {ResourceType} for "{Kind}/{Name}" (UID: {Uid}) failed.""",
+                typeof(TEntity).Name,
+                entry.Entity.Kind,
+                entry.Entity.Name(),
+                uid);
+        }
+        catch (Exception e)
+        {
+            logger.LogError(
+                e,
+                """Queued reconciliation for the entity of type {ResourceType} for "{Kind}/{Name}" (UID: {Uid}) failed.""",
+                typeof(TEntity).Name,
+                entry.Entity.Kind,
+                entry.Entity.Name(),
+                uid);
+        }
+        finally
+        {
+            if (uidLock.CurrentCount is 1 && _uidLocks.TryRemove(uid, out var removedLock))
+            {
+                removedLock.Dispose();
+            }
+        }
+    }
+
+    private async Task HandleLockingConflictAsync(RequeueEntry<TEntity> entry, string uid, CancellationToken cancellationToken)
+    {
+        switch (operatorSettings.ParallelReconciliationOptions.ConflictStrategy)
+        {
+            case ParallelReconciliationConflictStrategy.Discard:
+                logger.LogDebug(
+                    "Entity {Kind}/{Name} (UID: {Uid}) is already being reconciled. Discarding request.",
+                    entry.Entity.Kind,
+                    entry.Entity.Name(),
+                    uid);
+                break;
+
+            case ParallelReconciliationConflictStrategy.RequeueAfterDelay:
+                logger.LogDebug(
+                    "Entity {Kind}/{Name} (UID: {Uid}) is already being reconciled. Requeueing after {Delay}s.",
+                    entry.Entity.Kind,
+                    entry.Entity.Name(),
+                    uid,
+                    operatorSettings.ParallelReconciliationOptions.GetEffectiveRequeueDelay().TotalSeconds);
+
+                await queue.Enqueue(
+                    entry.Entity,
+                    entry.RequeueType,
+                    operatorSettings.ParallelReconciliationOptions.GetEffectiveRequeueDelay(),
+                    cancellationToken);
+                break;
+
+            default:
+                throw new NotSupportedException($"Conflict strategy {operatorSettings.ParallelReconciliationOptions.ConflictStrategy} is not supported in HandleUidConflictAsync.");
         }
     }
 }

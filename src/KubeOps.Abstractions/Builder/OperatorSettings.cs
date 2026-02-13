@@ -100,8 +100,10 @@ public sealed partial class OperatorSettings
     /// multiple entities simultaneously) with consistency (preventing race conditions on individual entities).
     /// </para>
     /// <para>
-    /// By default, the operator uses <see cref="ParallelReconciliationConflictStrategy.Discard"/>
+    /// By default, the operator uses <see cref="ParallelReconciliationConflictStrategy.WaitForCompletion"/>
     /// and allows up to <c>Environment.ProcessorCount * 2</c> concurrent reconciliations.
+    /// The <c>WaitForCompletion</c> strategy ensures that no reconciliation requests are lost by waiting
+    /// for any in-progress reconciliation to complete before processing the next request for the same entity.
     /// Adjust these values based on your reconciliation logic complexity, external API rate limits,
     /// and cluster resource constraints.
     /// </para>
