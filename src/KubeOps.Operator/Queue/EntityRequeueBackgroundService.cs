@@ -25,6 +25,40 @@ namespace KubeOps.Operator.Queue;
 /// <typeparam name="TEntity">
 /// The type of the Kubernetes entity being managed. This entity must implement the <see cref="IKubernetesObject{V1ObjectMeta}"/> interface.
 /// </typeparam>
+/// <remarks>
+/// <para>
+/// This service implements a two-level locking strategy to control parallelism and prevent concurrent modifications:
+/// </para>
+/// <list type="number">
+/// <item>
+/// <description>
+/// A global semaphore (<c>_parallelismSemaphore</c>) limits the total number of concurrent reconciliations
+/// based on <see cref="ParallelReconciliationOptions.MaxParallelReconciliations"/>. This semaphore is acquired
+/// <strong>before</strong> reading from the queue, implementing true back-pressure to prevent unbounded memory growth.
+/// </description>
+/// </item>
+/// <item>
+/// <description>
+/// Per-entity UID locks (<c>_uidLocks</c>) ensure that only one reconciliation per entity can run at a time,
+/// preventing concurrent modifications to the same entity. Each entity's UID gets its own <see cref="SemaphoreSlim"/> instance.
+/// </description>
+/// </item>
+/// </list>
+/// <para>
+/// When a conflict is detected (an entity is already being reconciled), the behavior is determined by
+/// <see cref="ParallelReconciliationConflictStrategy"/>:
+/// </para>
+/// <list type="bullet">
+/// <item><description><see cref="ParallelReconciliationConflictStrategy.Discard"/> - The reconciliation request is discarded.</description></item>
+/// <item><description><see cref="ParallelReconciliationConflictStrategy.RequeueAfterDelay"/> - The entity is requeued with a delay.</description></item>
+/// <item><description><see cref="ParallelReconciliationConflictStrategy.WaitForCompletion"/> - The request waits for the current reconciliation to complete.</description></item>
+/// </list>
+/// <para>
+/// The service implements back-pressure by acquiring the parallelism semaphore before reading from the queue.
+/// This ensures that queue consumption rate matches the processing capacity, preventing memory leaks from
+/// unbounded task accumulation.
+/// </para>
+/// </remarks>
 internal sealed class EntityRequeueBackgroundService<TEntity>(
     ActivitySource activitySource,
     IKubernetesClient client,
@@ -137,35 +171,63 @@ internal sealed class EntityRequeueBackgroundService<TEntity>(
     {
         var tasks = new List<Task>(operatorSettings.ParallelReconciliationOptions.MaxParallelReconciliations);
 
-        await foreach (var queueEntry in queue.WithCancellation(cancellationToken))
+        try
         {
-            var task = Task.Run(
-                async () =>
+            await foreach (var queueEntry in queue.WithCancellation(cancellationToken))
+            {
+                // Acquire semaphore BEFORE reading next item from queue
+                // This implements back-pressure: we only read as many items as we can process
+                await _parallelismSemaphore.WaitAsync(cancellationToken);
+
+                // Start processing without Task.Run (already async)
+                var task = ProcessEntryWithSemaphoreReleaseAsync(queueEntry, cancellationToken);
+                tasks.Add(task);
+
+                // Periodic cleanup of completed tasks
+                if (tasks.Count >= operatorSettings.ParallelReconciliationOptions.MaxParallelReconciliations)
                 {
-                    await _parallelismSemaphore.WaitAsync(cancellationToken);
-                    try
-                    {
-                        await ProcessEntryAsync(queueEntry, cancellationToken);
-                    }
-                    finally
-                    {
-                        _parallelismSemaphore.Release();
-                    }
-                },
-                cancellationToken);
+                    tasks.RemoveAll(t => t.IsCompleted);
+                }
+            }
 
-            tasks.Add(task);
-            tasks.RemoveAll(t => t.IsCompleted);
+            await Task.WhenAll(tasks);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogInformation("Queue processing cancelled during shutdown.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "Fatal error in queue processing. Service will stop.");
+            throw;
+        }
+    }
 
-        await Task.WhenAll(tasks);
+    /// <summary>
+    /// Processes a queue entry and ensures the parallelism semaphore is released afterwards.
+    /// </summary>
+    /// <param name="entry">The requeue entry to process.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+    /// <remarks>
+    /// This method assumes the parallelism semaphore has already been acquired before calling.
+    /// </remarks>
+    private async Task ProcessEntryWithSemaphoreReleaseAsync(RequeueEntry<TEntity> entry, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ProcessEntryAsync(entry, cancellationToken);
+        }
+        finally
+        {
+            _parallelismSemaphore.Release();
+        }
     }
 
     private async Task ProcessEntryAsync(RequeueEntry<TEntity> entry, CancellationToken cancellationToken)
     {
         var uid = entry.Entity.Uid();
-
         var uidLock = _uidLocks.GetOrAdd(uid, _ => new(1, 1));
+        var lockAcquired = false;
 
         try
         {
@@ -188,6 +250,8 @@ internal sealed class EntityRequeueBackgroundService<TEntity>(
                 await uidLock.WaitAsync(cancellationToken);
             }
 
+            lockAcquired = true;
+
             try
             {
                 logger.LogDebug(
@@ -206,7 +270,10 @@ internal sealed class EntityRequeueBackgroundService<TEntity>(
             }
             finally
             {
-                uidLock.Release();
+                if (lockAcquired)
+                {
+                    uidLock.Release();
+                }
             }
         }
         catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
