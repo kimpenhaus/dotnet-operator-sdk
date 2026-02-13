@@ -135,7 +135,7 @@ internal sealed class EntityRequeueBackgroundService<TEntity>(
 
     private async Task WatchAsync(CancellationToken cancellationToken)
     {
-        var tasks = new List<Task>();
+        var tasks = new List<Task>(operatorSettings.ParallelReconciliationOptions.MaxParallelReconciliations);
 
         await foreach (var queueEntry in queue.WithCancellation(cancellationToken))
         {

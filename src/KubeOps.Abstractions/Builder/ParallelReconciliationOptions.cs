@@ -46,6 +46,8 @@ namespace KubeOps.Abstractions.Builder;
 /// </example>
 public sealed record ParallelReconciliationOptions
 {
+    private int _maxParallelReconciliations = Environment.ProcessorCount * 2;
+
     /// <summary>
     /// Gets or sets the maximum number of parallel reconciliations across all entities.
     /// </summary>
@@ -65,7 +67,18 @@ public sealed record ParallelReconciliationOptions
     /// than CPU-bound operations.
     /// </para>
     /// </remarks>
-    public int MaxParallelReconciliations { get; set; } = Environment.ProcessorCount * 2;
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The value is less than or equal to 0.
+    /// </exception>
+    public int MaxParallelReconciliations
+    {
+        get => _maxParallelReconciliations;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(value, 0);
+            _maxParallelReconciliations = value;
+        }
+    }
 
     /// <summary>
     /// Gets or sets the strategy for handling reconciliation requests when an entity with the same UID is already being processed.
