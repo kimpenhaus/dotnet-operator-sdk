@@ -25,7 +25,7 @@ namespace KubeOps.Operator.Queue;
 /// <typeparam name="TEntity">
 /// The type of the Kubernetes entity being managed. This entity must implement the <see cref="IKubernetesObject{V1ObjectMeta}"/> interface.
 /// </typeparam>
-public class EntityRequeueBackgroundService<TEntity>(
+internal sealed class EntityRequeueBackgroundService<TEntity>(
     ActivitySource activitySource,
     IKubernetesClient client,
     OperatorSettings operatorSettings,
@@ -60,34 +60,12 @@ public class EntityRequeueBackgroundService<TEntity>(
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
-    {
-        if (_disposed)
-        {
-            return Task.CompletedTask;
-        }
-
-        return _cts.CancelAsync();
-    }
+        => _disposed
+            ? Task.CompletedTask
+            : _cts.CancelAsync();
 
     public void Dispose()
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await DisposeAsync(true);
-        GC.SuppressFinalize(this);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (!disposing)
-        {
-            return;
-        }
-
         _cts.Dispose();
         _parallelismSemaphore.Dispose();
 
@@ -103,13 +81,8 @@ public class EntityRequeueBackgroundService<TEntity>(
         _disposed = true;
     }
 
-    protected virtual async ValueTask DisposeAsync(bool disposing)
+    public async ValueTask DisposeAsync()
     {
-        if (!disposing)
-        {
-            return;
-        }
-
         await CastAndDispose(_cts);
         await CastAndDispose(_parallelismSemaphore);
 
@@ -138,7 +111,7 @@ public class EntityRequeueBackgroundService<TEntity>(
         }
     }
 
-    protected virtual async Task ReconcileSingleAsync(RequeueEntry<TEntity> entry, CancellationToken cancellationToken)
+    private async Task ReconcileSingleAsync(RequeueEntry<TEntity> entry, CancellationToken cancellationToken)
     {
         using var activity = activitySource.StartActivity($"""Processing requeued "{entry.RequeueType}" event""", ActivityKind.Consumer);
         using var scope = logger.BeginScope(EntityLoggingScope.CreateFor(entry.RequeueType, entry.Entity));
@@ -188,11 +161,6 @@ public class EntityRequeueBackgroundService<TEntity>(
         await Task.WhenAll(tasks);
     }
 
-    /// <summary>
-    /// Processes a requeue entry with UID-based locking to prevent concurrent processing of the same entity.
-    /// </summary>
-    /// <param name="entry">The requeue entry containing the entity to process.</param>
-    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     private async Task ProcessEntryAsync(RequeueEntry<TEntity> entry, CancellationToken cancellationToken)
     {
         var uid = entry.Entity.Uid();
