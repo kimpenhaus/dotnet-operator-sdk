@@ -12,22 +12,22 @@ using Microsoft.Extensions.Logging;
 
 namespace KubeOps.Operator.Queue;
 
-internal sealed class KubeOpsEntityRequeueFactory(IServiceProvider services)
-    : IEntityRequeueFactory
+internal sealed class EntityQueueFactory(IServiceProvider services)
+    : IEntityQueueFactory
 {
-    public EntityRequeue<TEntity> Create<TEntity>()
+    public EntityQueue<TEntity> Create<TEntity>()
         where TEntity : IKubernetesObject<V1ObjectMeta> =>
-        (entity, type, timeSpan, cancellationToken) =>
+        (entity, type, triggerSource, timeSpan, cancellationToken) =>
         {
-            var logger = services.GetService<ILogger<EntityRequeue<TEntity>>>();
+            var logger = services.GetService<ILogger<EntityQueue<TEntity>>>();
             var queue = services.GetRequiredService<ITimedEntityQueue<TEntity>>();
 
             logger?.LogTrace(
-                """Requeue entity "{Kind}/{Name}" in {Milliseconds}ms.""",
+                """Queue entity "{Kind}/{Name}" in {Milliseconds}ms.""",
                 entity.Kind,
                 entity.Name(),
                 timeSpan.TotalMilliseconds);
 
-            queue.Enqueue(entity, type, timeSpan, cancellationToken);
+            queue.Enqueue(entity, type, triggerSource, timeSpan, cancellationToken);
         };
 }

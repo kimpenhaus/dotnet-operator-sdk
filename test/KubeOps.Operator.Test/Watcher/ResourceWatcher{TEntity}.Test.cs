@@ -47,11 +47,11 @@ public sealed class ResourceWatcherTest
 
         // Act
         // Start and stop the watcher
-        await resourceWatcher.StartAsync(CancellationToken.None);
-        await resourceWatcher.StopAsync(CancellationToken.None);
+        await resourceWatcher.StartAsync(TestContext.Current.CancellationToken);
+        await resourceWatcher.StopAsync(TestContext.Current.CancellationToken);
 
         // Restart the watcher
-        await resourceWatcher.StartAsync(CancellationToken.None);
+        await resourceWatcher.StartAsync(TestContext.Current.CancellationToken);
 
         // Assert
         Mock.Get(kubernetesClient)

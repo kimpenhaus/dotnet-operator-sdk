@@ -4,14 +4,12 @@
 
 using FluentAssertions;
 
-using k8s;
 using k8s.Models;
 
 using KubeOps.Abstractions.Builder;
 using KubeOps.Abstractions.Reconciliation;
 using KubeOps.Abstractions.Reconciliation.Controller;
 using KubeOps.Abstractions.Reconciliation.Finalizer;
-using KubeOps.Abstractions.Reconciliation.Queue;
 using KubeOps.KubernetesClient;
 using KubeOps.Operator.Queue;
 using KubeOps.Operator.Reconciliation;
@@ -54,12 +52,12 @@ public sealed class ReconcilerTest
     public async Task Reconcile_Should_Remove_Entity_From_Queue_Before_Processing()
     {
         var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Added);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Added, ReconciliationTriggerSource.ApiServer);
         var controller = CreateMockController();
 
         var reconciler = CreateReconcilerForController(controller);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockQueue.Verify(
             q => q.Remove(entity, It.IsAny<CancellationToken>()),
@@ -71,19 +69,20 @@ public sealed class ReconcilerTest
     {
         var entity = CreateTestEntity();
         var requeueAfter = TimeSpan.FromMinutes(5);
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Added);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Added, ReconciliationTriggerSource.ApiServer);
 
         var controller = CreateMockController(
             reconcileResult: ReconciliationResult<V1ConfigMap>.Success(entity, requeueAfter));
 
         var reconciler = CreateReconcilerForController(controller);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockQueue.Verify(
             q => q.Enqueue(
                 entity,
-                RequeueType.Added,
+                ReconciliationType.Added,
+                ReconciliationTriggerSource.Operator,
                 requeueAfter,
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -93,19 +92,20 @@ public sealed class ReconcilerTest
     public async Task Reconcile_Should_Not_Enqueue_Entity_When_Result_Has_No_RequeueAfter()
     {
         var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Added);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Added, ReconciliationTriggerSource.ApiServer);
 
         var controller = CreateMockController(
             reconcileResult: ReconciliationResult<V1ConfigMap>.Success(entity));
 
         var reconciler = CreateReconcilerForController(controller);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockQueue.Verify(
             q => q.Enqueue(
                 It.IsAny<V1ConfigMap>(),
-                It.IsAny<RequeueType>(),
+                It.IsAny<ReconciliationType>(),
+                It.IsAny<ReconciliationTriggerSource>(),
                 It.IsAny<TimeSpan>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
@@ -115,7 +115,7 @@ public sealed class ReconcilerTest
     public async Task Reconcile_Should_Skip_On_Cached_Generation()
     {
         var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Added);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Added, ReconciliationTriggerSource.ApiServer);
         var mockController = new Mock<IEntityController<V1ConfigMap>>();
 
         mockController
@@ -131,7 +131,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(mockController.Object);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockLogger.Verify(logger => logger.Log(
                     It.Is<LogLevel>(logLevel => logLevel == LogLevel.Debug),
@@ -146,7 +146,7 @@ public sealed class ReconcilerTest
     public async Task Reconcile_Should_Call_ReconcileAsync_For_Added_Event()
     {
         var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Added);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Added, ReconciliationTriggerSource.ApiServer);
         var mockController = new Mock<IEntityController<V1ConfigMap>>();
 
         mockController
@@ -155,7 +155,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(mockController.Object);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         mockController.Verify(
             c => c.ReconcileAsync(entity, It.IsAny<CancellationToken>()),
@@ -166,7 +166,7 @@ public sealed class ReconcilerTest
     public async Task Reconcile_Should_Call_ReconcileAsync_For_Modified_Event_With_No_Deletion_Timestamp()
     {
         var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Modified);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Modified, ReconciliationTriggerSource.ApiServer);
         var mockController = new Mock<IEntityController<V1ConfigMap>>();
 
         mockController
@@ -175,7 +175,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(mockController.Object);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         mockController.Verify(
             c => c.ReconcileAsync(entity, It.IsAny<CancellationToken>()),
@@ -187,7 +187,7 @@ public sealed class ReconcilerTest
     {
         const string finalizerName = "test-finalizer";
         var entity = CreateTestEntityForFinalization(deletionTimestamp: DateTime.UtcNow, finalizer: finalizerName);
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Modified);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Modified, ReconciliationTriggerSource.ApiServer);
 
         var mockFinalizer = new Mock<IEntityFinalizer<V1ConfigMap>>();
 
@@ -197,7 +197,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForFinalizer(mockFinalizer.Object, finalizerName);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         mockFinalizer.Verify(
             c => c.FinalizeAsync(entity, It.IsAny<CancellationToken>()),
@@ -208,7 +208,7 @@ public sealed class ReconcilerTest
     public async Task Reconcile_Should_Call_DeletedAsync_For_Deleted_Event()
     {
         var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Deleted);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Deleted, ReconciliationTriggerSource.ApiServer);
         var mockController = new Mock<IEntityController<V1ConfigMap>>();
 
         mockController
@@ -217,7 +217,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(mockController.Object);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         mockController.Verify(
             c => c.DeletedAsync(entity, It.IsAny<CancellationToken>()),
@@ -228,14 +228,14 @@ public sealed class ReconcilerTest
     public async Task Reconcile_Should_Remove_From_Cache_After_Successful_Deletion()
     {
         var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Deleted);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Deleted, ReconciliationTriggerSource.ApiServer);
 
         var controller = CreateMockController(
             deletedResult: ReconciliationResult<V1ConfigMap>.Success(entity));
 
         var reconciler = CreateReconcilerForController(controller);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockCache.Verify(
             c => c.RemoveAsync(entity.Uid(), It.IsAny<FusionCacheEntryOptions>(), It.IsAny<CancellationToken>()),
@@ -246,67 +246,31 @@ public sealed class ReconcilerTest
     public async Task Reconcile_Should_Not_Remove_From_Cache_After_Failed_Deletion()
     {
         var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Deleted);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Deleted, ReconciliationTriggerSource.ApiServer);
 
         var controller = CreateMockController(
             deletedResult: ReconciliationResult<V1ConfigMap>.Failure(entity, "Deletion failed"));
 
         var reconciler = CreateReconcilerForController(controller);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockCache.Verify(
             c => c.RemoveAsync(It.IsAny<string>(), It.IsAny<FusionCacheEntryOptions>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
-    [Theory]
-    [InlineData(RequeueType.Added)]
-    [InlineData(RequeueType.Modified)]
-    [InlineData(RequeueType.Deleted)]
-    public async Task Reconcile_Should_Use_Correct_RequeueType_For_EventType(RequeueType expectedRequeueType)
-    {
-        var entity = CreateTestEntity();
-        var requeueAfter = TimeSpan.FromSeconds(30);
-        var watchEventType = expectedRequeueType switch
-        {
-            RequeueType.Added => WatchEventType.Added,
-            RequeueType.Modified => WatchEventType.Modified,
-            RequeueType.Deleted => WatchEventType.Deleted,
-            _ => throw new ArgumentException("Invalid RequeueType"),
-        };
-
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, watchEventType);
-        var result = ReconciliationResult<V1ConfigMap>.Success(entity, requeueAfter);
-
-        var controller = watchEventType == WatchEventType.Deleted
-            ? CreateMockController(deletedResult: result)
-            : CreateMockController(reconcileResult: result);
-
-        var reconciler = CreateReconcilerForController(controller);
-
-        await reconciler.Reconcile(context, CancellationToken.None);
-
-        _mockQueue.Verify(
-            q => q.Enqueue(
-                entity,
-                expectedRequeueType,
-                requeueAfter,
-                It.IsAny<CancellationToken>()),
-            Times.Once);
-    }
-
     [Fact]
     public async Task Reconcile_Should_Return_Result_From_Controller()
     {
         var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Added);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Added, ReconciliationTriggerSource.ApiServer);
         var expectedResult = ReconciliationResult<V1ConfigMap>.Success(entity, TimeSpan.FromMinutes(1));
 
         var controller = CreateMockController(reconcileResult: expectedResult);
         var reconciler = CreateReconcilerForController(controller);
 
-        var result = await reconciler.Reconcile(context, CancellationToken.None);
+        var result = await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         result.Should().Be(expectedResult);
         result.Entity.Should().Be(entity);
@@ -317,14 +281,14 @@ public sealed class ReconcilerTest
     public async Task Reconcile_Should_Handle_Failure_Result()
     {
         var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Added);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Added, ReconciliationTriggerSource.ApiServer);
         const string errorMessage = "Test error";
         var failureResult = ReconciliationResult<V1ConfigMap>.Failure(entity, errorMessage);
 
         var controller = CreateMockController(reconcileResult: failureResult);
         var reconciler = CreateReconcilerForController(controller);
 
-        var result = await reconciler.Reconcile(context, CancellationToken.None);
+        var result = await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Be(errorMessage);
@@ -334,7 +298,7 @@ public sealed class ReconcilerTest
     public async Task Reconcile_Should_Enqueue_Failed_Result_If_RequeueAfter_Set()
     {
         var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Added);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Added, ReconciliationTriggerSource.ApiServer);
         var requeueAfter = TimeSpan.FromSeconds(30);
         var failureResult = ReconciliationResult<V1ConfigMap>.Failure(
             entity,
@@ -344,12 +308,13 @@ public sealed class ReconcilerTest
         var controller = CreateMockController(reconcileResult: failureResult);
         var reconciler = CreateReconcilerForController(controller);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockQueue.Verify(
             q => q.Enqueue(
                 entity,
-                RequeueType.Added,
+                ReconciliationType.Added,
+                ReconciliationTriggerSource.Operator,
                 requeueAfter,
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -361,7 +326,7 @@ public sealed class ReconcilerTest
         _settings.AutoAttachFinalizers = true;
 
         var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Modified);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Modified, ReconciliationTriggerSource.ApiServer);
         var mockController = new Mock<IEntityController<V1ConfigMap>>();
         var mockFinalizer = new Mock<IEntityFinalizer<V1ConfigMap>>();
 
@@ -383,7 +348,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(mockController.Object);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockClient.Verify(
             c => c.UpdateAsync(It.Is<V1ConfigMap>(cm => cm.HasFinalizer("ientityfinalizer`1proxyfinalizer")),
@@ -398,7 +363,7 @@ public sealed class ReconcilerTest
 
         const string finalizerName = "test-finalizer";
         var entity = CreateTestEntityForFinalization(deletionTimestamp: DateTime.UtcNow, finalizer: finalizerName);
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Modified);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Modified, ReconciliationTriggerSource.ApiServer);
 
         var mockFinalizer = new Mock<IEntityFinalizer<V1ConfigMap>>();
 
@@ -414,7 +379,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForFinalizer(mockFinalizer.Object, finalizerName);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockClient.Verify(
             c => c.UpdateAsync(It.Is<V1ConfigMap>(cm => !cm.HasFinalizer(finalizerName)),

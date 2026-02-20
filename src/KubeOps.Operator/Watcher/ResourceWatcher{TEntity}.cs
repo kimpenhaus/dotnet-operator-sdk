@@ -12,9 +12,11 @@ using k8s.Models;
 
 using KubeOps.Abstractions.Builder;
 using KubeOps.Abstractions.Entities;
+using KubeOps.Abstractions.Reconciliation;
 using KubeOps.KubernetesClient;
 using KubeOps.Operator.Logging;
 using KubeOps.Operator.Queue;
+using KubeOps.Operator.Reconciliation;
 
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -129,7 +131,8 @@ public class ResourceWatcher<TEntity>(
         => await entityQueue
             .Enqueue(
                 entity,
-                eventType.ToRequeueType(),
+                eventType.ToReconciliationType(),
+                ReconciliationTriggerSource.ApiServer,
                 TimeSpan.Zero,
                 cancellationToken);
 

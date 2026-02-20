@@ -19,7 +19,7 @@ using Microsoft.Extensions.Logging;
 namespace KubeOps.Operator.Queue;
 
 /// <summary>
-/// A background service responsible for managing the requeue mechanism of Kubernetes entities.
+/// A background service responsible for managing the queue mechanism of Kubernetes entities.
 /// It processes entities from a timed queue and invokes the reconciliation logic for each entity.
 /// </summary>
 /// <typeparam name="TEntity">
@@ -59,13 +59,13 @@ namespace KubeOps.Operator.Queue;
 /// unbounded task accumulation.
 /// </para>
 /// </remarks>
-internal sealed class EntityRequeueBackgroundService<TEntity>(
+internal sealed class EntityQueueBackgroundService<TEntity>(
     ActivitySource activitySource,
     IKubernetesClient client,
     OperatorSettings operatorSettings,
     ITimedEntityQueue<TEntity> queue,
     IReconciler<TEntity> reconciler,
-    ILogger<EntityRequeueBackgroundService<TEntity>> logger) : IHostedService, IDisposable, IAsyncDisposable
+    ILogger<EntityQueueBackgroundService<TEntity>> logger) : IHostedService, IDisposable, IAsyncDisposable
     where TEntity : IKubernetesObject<V1ObjectMeta>
 {
     private readonly CancellationTokenSource _cts = new();
@@ -145,25 +145,26 @@ internal sealed class EntityRequeueBackgroundService<TEntity>(
         }
     }
 
-    private async Task ReconcileSingleAsync(RequeueEntry<TEntity> entry, CancellationToken cancellationToken)
+    private async Task ReconcileSingleAsync(QueueEntry<TEntity> entry, CancellationToken cancellationToken)
     {
-        using var activity = activitySource.StartActivity($"""Processing requeued "{entry.RequeueType}" event""", ActivityKind.Consumer);
-        using var scope = logger.BeginScope(EntityLoggingScope.CreateFor(entry.RequeueType, entry.Entity));
+        using var activity = activitySource.StartActivity($"""Processing queued "{entry.ReconciliationType}" event""", ActivityKind.Consumer);
+        using var scope = logger.BeginScope(EntityLoggingScope.CreateFor(entry.ReconciliationType, entry.Entity));
 
-        logger.LogTrace("""Executing requested requeued reconciliation for "{Name}".""", entry.Entity.Name());
+        logger.LogTrace("""Executing requested queued reconciliation for "{Name}".""", entry.Entity.Name());
 
         if (await client.GetAsync<TEntity>(entry.Entity.Name(), entry.Entity.Namespace(), cancellationToken) is not
             { } entity)
         {
             logger.LogWarning(
-                """Requeued entity "{Name}" was not found. Skipping reconciliation.""", entry.Entity.Name());
+                """Queued entity "{Name}" was not found. Skipping reconciliation.""", entry.Entity.Name());
             return;
         }
 
         await reconciler.Reconcile(
-            ReconciliationContext<TEntity>.CreateFromOperatorEvent(
+            ReconciliationContext<TEntity>.CreateFor(
                 entity,
-                entry.RequeueType.ToWatchEventType()),
+                entry.ReconciliationType,
+                entry.ReconciliationTriggerSource),
             cancellationToken);
     }
 
@@ -210,12 +211,12 @@ internal sealed class EntityRequeueBackgroundService<TEntity>(
     /// <summary>
     /// Processes a queue entry and ensures the parallelism semaphore is released afterwards.
     /// </summary>
-    /// <param name="entry">The requeue entry to process.</param>
+    /// <param name="entry">The queue entry to process.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <remarks>
     /// This method assumes the parallelism semaphore has already been acquired before calling.
     /// </remarks>
-    private async Task ProcessEntryWithSemaphoreReleaseAsync(RequeueEntry<TEntity> entry, CancellationToken cancellationToken)
+    private async Task ProcessEntryWithSemaphoreReleaseAsync(QueueEntry<TEntity> entry, CancellationToken cancellationToken)
     {
         try
         {
@@ -227,7 +228,7 @@ internal sealed class EntityRequeueBackgroundService<TEntity>(
         }
     }
 
-    private async Task ProcessEntryAsync(RequeueEntry<TEntity> entry, CancellationToken cancellationToken)
+    private async Task ProcessEntryAsync(QueueEntry<TEntity> entry, CancellationToken cancellationToken)
     {
         var uid = entry.Entity.Uid();
         var uidLock = _uidLocks.GetOrAdd(uid, _ => new(1, 1));
@@ -304,7 +305,7 @@ internal sealed class EntityRequeueBackgroundService<TEntity>(
         }
     }
 
-    private async Task HandleLockingConflictAsync(RequeueEntry<TEntity> entry, string uid, CancellationToken cancellationToken)
+    private async Task HandleLockingConflictAsync(QueueEntry<TEntity> entry, string uid, CancellationToken cancellationToken)
     {
         switch (operatorSettings.ParallelReconciliationOptions.ConflictStrategy)
         {
@@ -326,7 +327,8 @@ internal sealed class EntityRequeueBackgroundService<TEntity>(
 
                 await queue.Enqueue(
                     entry.Entity,
-                    entry.RequeueType,
+                    entry.ReconciliationType,
+                    entry.ReconciliationTriggerSource,
                     operatorSettings.ParallelReconciliationOptions.GetEffectiveRequeueDelay(),
                     cancellationToken);
                 break;

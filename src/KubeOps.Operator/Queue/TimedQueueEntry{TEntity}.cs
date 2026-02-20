@@ -4,22 +4,24 @@
 
 using System.Collections.Concurrent;
 
-using KubeOps.Abstractions.Reconciliation.Queue;
+using KubeOps.Abstractions.Reconciliation;
 
 namespace KubeOps.Operator.Queue;
 
 internal sealed record TimedQueueEntry<TEntity> : IDisposable
 {
     private readonly CancellationTokenSource _cts = new();
-    private readonly TimeSpan _requeueIn;
+    private readonly TimeSpan _queueIn;
     private readonly TEntity _entity;
-    private readonly RequeueType _requeueType;
+    private readonly ReconciliationType _reconciliationType;
+    private readonly ReconciliationTriggerSource _reconciliationTriggerSource;
 
-    public TimedQueueEntry(TEntity entity, RequeueType requeueType, TimeSpan requeueIn)
+    public TimedQueueEntry(TEntity entity, ReconciliationType reconciliationType, ReconciliationTriggerSource reconciliationTriggerSource, TimeSpan queueIn)
     {
-        _requeueIn = requeueIn;
+        _queueIn = queueIn;
         _entity = entity;
-        _requeueType = requeueType;
+        _reconciliationType = reconciliationType;
+        _reconciliationTriggerSource = reconciliationTriggerSource;
     }
 
     /// <summary>
@@ -38,23 +40,17 @@ internal sealed record TimedQueueEntry<TEntity> : IDisposable
         Dispose();
     }
 
-    /// <summary>
-    /// Adds the entity to <paramref name="collection"/> after <see cref="_requeueIn"/>.
-    /// Can be canceled with <see cref="Cancel"/>.
-    /// </summary>
-    /// <param name="collection">The collection to add the entry to.</param>
-    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
-    public async Task AddAfterDelay(BlockingCollection<RequeueEntry<TEntity>> collection)
+    public async Task AddAfterDelay(BlockingCollection<QueueEntry<TEntity>> collection)
     {
         try
         {
-            await Task.Delay(_requeueIn, _cts.Token);
+            await Task.Delay(_queueIn, _cts.Token);
             if (_cts.IsCancellationRequested)
             {
                 return;
             }
 
-            collection.TryAdd(new() { Entity = _entity, RequeueType = _requeueType });
+            collection.TryAdd(new(_entity, _reconciliationType, _reconciliationTriggerSource));
         }
         catch (TaskCanceledException)
         {

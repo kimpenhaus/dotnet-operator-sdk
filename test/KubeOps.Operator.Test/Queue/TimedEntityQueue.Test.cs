@@ -4,7 +4,7 @@
 
 using k8s.Models;
 
-using KubeOps.Abstractions.Reconciliation.Queue;
+using KubeOps.Abstractions.Reconciliation;
 using KubeOps.Operator.Queue;
 
 using Microsoft.Extensions.Logging;
@@ -20,8 +20,18 @@ public sealed class TimedEntityQueueTest
     {
         var queue = new TimedEntityQueue<V1Secret>(Mock.Of<ILogger<TimedEntityQueue<V1Secret>>>());
 
-        await queue.Enqueue(CreateSecret("app-ns1", "secret-name"), RequeueType.Modified, TimeSpan.FromSeconds(1), CancellationToken.None);
-        await queue.Enqueue(CreateSecret("app-ns2", "secret-name"), RequeueType.Modified, TimeSpan.FromSeconds(1), CancellationToken.None);
+        await queue.Enqueue(
+            CreateSecret("app-ns1", "secret-name"),
+            ReconciliationType.Modified,
+            ReconciliationTriggerSource.Operator,
+            TimeSpan.FromSeconds(1),
+            TestContext.Current.CancellationToken);
+        await queue.Enqueue(
+            CreateSecret("app-ns2", "secret-name"),
+            ReconciliationType.Modified,
+            ReconciliationTriggerSource.Operator,
+            TimeSpan.FromSeconds(1),
+            TestContext.Current.CancellationToken);
 
         var items = new List<V1Secret>();
 

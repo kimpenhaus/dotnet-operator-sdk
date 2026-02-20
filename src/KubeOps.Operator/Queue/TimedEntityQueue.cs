@@ -7,7 +7,7 @@ using System.Collections.Concurrent;
 using k8s;
 using k8s.Models;
 
-using KubeOps.Abstractions.Reconciliation.Queue;
+using KubeOps.Abstractions.Reconciliation;
 
 using Microsoft.Extensions.Logging;
 
@@ -30,12 +30,12 @@ public sealed class TimedEntityQueue<TEntity>(
     private readonly ConcurrentDictionary<string, TimedQueueEntry<TEntity>> _management = new();
 
     // The actual queue containing all the entries that have to be reconciled.
-    private readonly BlockingCollection<RequeueEntry<TEntity>> _queue = new(new ConcurrentQueue<RequeueEntry<TEntity>>());
+    private readonly BlockingCollection<QueueEntry<TEntity>> _queue = new(new ConcurrentQueue<QueueEntry<TEntity>>());
 
     internal int Count => _management.Count;
 
     /// <inheritdoc cref="ITimedEntityQueue{TEntity}.Enqueue"/>
-    public Task Enqueue(TEntity entity, RequeueType type, TimeSpan requeueIn, CancellationToken cancellationToken)
+    public Task Enqueue(TEntity entity, ReconciliationType type, ReconciliationTriggerSource reconciliationTriggerSource, TimeSpan queueIn, CancellationToken cancellationToken)
     {
         _management
             .AddOrUpdate(
@@ -46,9 +46,9 @@ public sealed class TimedEntityQueue<TEntity>(
                         """Adding schedule for entity "{Kind}/{Name}" to reconcile in {Seconds}s.""",
                         entity.Kind,
                         entity.Name(),
-                        requeueIn.TotalSeconds);
+                        queueIn.TotalSeconds);
 
-                    var entry = new TimedQueueEntry<TEntity>(entity, type, requeueIn);
+                    var entry = new TimedQueueEntry<TEntity>(entity, type, reconciliationTriggerSource, queueIn);
                     _scheduledEntries.StartNew(
                         async () =>
                         {
@@ -64,10 +64,10 @@ public sealed class TimedEntityQueue<TEntity>(
                         """Updating schedule for entity "{Kind}/{Name}" to reconcile in {Seconds}s.""",
                         entity.Kind,
                         entity.Name(),
-                        requeueIn.TotalSeconds);
+                        queueIn.TotalSeconds);
 
                     oldEntry.Cancel();
-                    var entry = new TimedQueueEntry<TEntity>(entity, type, requeueIn);
+                    var entry = new TimedQueueEntry<TEntity>(entity, type, reconciliationTriggerSource, queueIn);
                     _scheduledEntries.StartNew(
                         async () =>
                         {
@@ -92,7 +92,7 @@ public sealed class TimedEntityQueue<TEntity>(
     }
 
     /// <inheritdoc cref="IAsyncEnumerable{T}.GetAsyncEnumerator"/>
-    public async IAsyncEnumerator<RequeueEntry<TEntity>> GetAsyncEnumerator(CancellationToken cancellationToken = default)
+    public async IAsyncEnumerator<QueueEntry<TEntity>> GetAsyncEnumerator(CancellationToken cancellationToken = default)
     {
         await Task.Yield();
         foreach (var entry in _queue.GetConsumingEnumerable(cancellationToken))

@@ -50,9 +50,9 @@ internal sealed class Reconciler<TEntity>(
     {
         var result = reconciliationContext.EventType switch
         {
-            WatchEventType.Added or WatchEventType.Modified =>
+            ReconciliationType.Added or ReconciliationType.Modified =>
                 await ReconcileModification(reconciliationContext, cancellationToken),
-            WatchEventType.Deleted =>
+            ReconciliationType.Deleted =>
                 await ReconcileDeletion(reconciliationContext, cancellationToken),
             _ => throw new NotSupportedException($"Reconciliation event type {reconciliationContext.EventType} is not supported!"),
         };
@@ -62,7 +62,8 @@ internal sealed class Reconciler<TEntity>(
             await entityQueue
                 .Enqueue(
                     result.Entity,
-                    reconciliationContext.EventType.ToRequeueType(),
+                    reconciliationContext.EventType,
+                    ReconciliationTriggerSource.Operator,
                     result.RequeueAfter.Value,
                     cancellationToken);
         }
