@@ -140,12 +140,15 @@ internal sealed class Reconciler<TEntity>(
         {
             var finalizers = scope.ServiceProvider.GetKeyedServices<IEntityFinalizer<TEntity>>(KeyedService.AnyKey);
 
-            foreach (var finalizer in finalizers)
-            {
-                entity.AddFinalizer(finalizer.GetIdentifierName(entity));
-            }
+            var anyFinalizerAdded = finalizers
+                .Aggregate(
+                    false,
+                    (changed, finalizer) => entity.AddFinalizer(finalizer.GetIdentifierName(entity)) || changed);
 
-            entity = await client.UpdateAsync(entity, cancellationToken);
+            if (anyFinalizerAdded)
+            {
+                entity = await client.UpdateAsync(entity, cancellationToken);
+            }
         }
 
         var controller = scope.ServiceProvider.GetRequiredService<IEntityController<TEntity>>();
@@ -186,9 +189,8 @@ internal sealed class Reconciler<TEntity>(
 
         entity = result.Entity;
 
-        if (operatorSettings.AutoDetachFinalizers)
+        if (operatorSettings.AutoDetachFinalizers && entity.RemoveFinalizer(identifier))
         {
-            entity.RemoveFinalizer(identifier);
             entity = await client.UpdateAsync(entity, cancellationToken);
         }
 
