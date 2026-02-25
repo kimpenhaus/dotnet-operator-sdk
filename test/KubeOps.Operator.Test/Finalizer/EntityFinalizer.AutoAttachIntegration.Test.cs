@@ -41,7 +41,10 @@ public sealed class EntityFinalizerAutoAttachIntegrationTest : IntegrationTestBa
             "first",
             _ns.Namespace,
             TestContext.Current.CancellationToken);
-        result!.Metadata.Finalizers.Should().Contain("operator.test/testfinalizer");
+
+        result.Should().NotBeNull();
+        result.Metadata.Finalizers.Should().Contain("operator.test/testfinalizer");
+        result.Status.Status.Should().Be("reconciled");
     }
 
     public override async ValueTask InitializeAsync()
