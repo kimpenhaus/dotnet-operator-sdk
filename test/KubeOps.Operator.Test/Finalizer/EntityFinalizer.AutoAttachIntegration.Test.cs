@@ -75,7 +75,7 @@ public sealed class EntityFinalizerAutoAttachIntegrationTest : IntegrationTestBa
             .AddSingleton(_mock)
             .AddKubernetesOperator(s => { s.Namespace = _ns.Namespace; })
             .AddController<TestController, V1OperatorIntegrationTestEntity>()
-            .AddFinalizer<TestFinalizer, V1OperatorIntegrationTestEntity>("test");
+            .AddFinalizer<TestFinalizer, V1OperatorIntegrationTestEntity>("operator.test/testfinalizer");
     }
 
     private class TestController(
