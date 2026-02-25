@@ -26,7 +26,7 @@ public sealed class EntityControllerIntegrationTest : IntegrationTestBase
     public async Task Should_Call_Reconcile_On_New_Entity()
     {
         await _client.CreateAsync(
-            new V1OperatorIntegrationTestEntity("test-entity", "username", _ns.Namespace),
+            new V1OperatorIntegrationTestEntity("test-entity", "username", _ns.Namespace, true),
             TestContext.Current.CancellationToken);
         await _mock.WaitForInvocations;
 
@@ -129,12 +129,22 @@ public sealed class EntityControllerIntegrationTest : IntegrationTestBase
             .AddController<TestController, V1OperatorIntegrationTestEntity>();
     }
 
-    private class TestController(InvocationCounter<V1OperatorIntegrationTestEntity> svc) : IEntityController<V1OperatorIntegrationTestEntity>
+    private sealed class TestController(
+        InvocationCounter<V1OperatorIntegrationTestEntity> svc,
+        IKubernetesClient client) : IEntityController<V1OperatorIntegrationTestEntity>
     {
-        public Task<ReconciliationResult<V1OperatorIntegrationTestEntity>> ReconcileAsync(V1OperatorIntegrationTestEntity entity, CancellationToken cancellationToken)
+        public async Task<ReconciliationResult<V1OperatorIntegrationTestEntity>> ReconcileAsync(V1OperatorIntegrationTestEntity entity, CancellationToken cancellationToken)
         {
+            if (entity.Spec.CouldChangeStatus)
+            {
+                // status change: issue 1001 (https://github.com/dotnet/dotnet-operator-sdk/issues/1001)
+                entity.Status.Status = "reconciled";
+                entity = await client.UpdateStatusAsync(entity, cancellationToken);
+            }
+
             svc.Invocation(entity);
-            return Task.FromResult(ReconciliationResult<V1OperatorIntegrationTestEntity>.Success(entity));
+
+            return ReconciliationResult<V1OperatorIntegrationTestEntity>.Success(entity);
         }
 
         public Task<ReconciliationResult<V1OperatorIntegrationTestEntity>> DeletedAsync(V1OperatorIntegrationTestEntity entity, CancellationToken cancellationToken)

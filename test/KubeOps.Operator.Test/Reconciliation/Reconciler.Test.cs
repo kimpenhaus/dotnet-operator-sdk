@@ -59,7 +59,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(controller);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockQueue.Verify(
             q => q.Remove(entity, It.IsAny<CancellationToken>()),
@@ -78,7 +78,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(controller);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockQueue.Verify(
             q => q.Enqueue(
@@ -100,7 +100,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(controller);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockQueue.Verify(
             q => q.Enqueue(
@@ -131,7 +131,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(mockController.Object);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockLogger.Verify(logger => logger.Log(
                     It.Is<LogLevel>(logLevel => logLevel == LogLevel.Debug),
@@ -155,7 +155,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(mockController.Object);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         mockController.Verify(
             c => c.ReconcileAsync(entity, It.IsAny<CancellationToken>()),
@@ -175,7 +175,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(mockController.Object);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         mockController.Verify(
             c => c.ReconcileAsync(entity, It.IsAny<CancellationToken>()),
@@ -197,7 +197,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForFinalizer(mockFinalizer.Object, finalizerName);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         mockFinalizer.Verify(
             c => c.FinalizeAsync(entity, It.IsAny<CancellationToken>()),
@@ -217,7 +217,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(mockController.Object);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         mockController.Verify(
             c => c.DeletedAsync(entity, It.IsAny<CancellationToken>()),
@@ -235,7 +235,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(controller);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockCache.Verify(
             c => c.RemoveAsync(entity.Uid(), It.IsAny<FusionCacheEntryOptions>(), It.IsAny<CancellationToken>()),
@@ -253,7 +253,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(controller);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockCache.Verify(
             c => c.RemoveAsync(It.IsAny<string>(), It.IsAny<FusionCacheEntryOptions>(), It.IsAny<CancellationToken>()),
@@ -285,7 +285,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(controller);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockQueue.Verify(
             q => q.Enqueue(
@@ -306,7 +306,7 @@ public sealed class ReconcilerTest
         var controller = CreateMockController(reconcileResult: expectedResult);
         var reconciler = CreateReconcilerForController(controller);
 
-        var result = await reconciler.Reconcile(context, CancellationToken.None);
+        var result = await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         result.Should().Be(expectedResult);
         result.Entity.Should().Be(entity);
@@ -324,7 +324,7 @@ public sealed class ReconcilerTest
         var controller = CreateMockController(reconcileResult: failureResult);
         var reconciler = CreateReconcilerForController(controller);
 
-        var result = await reconciler.Reconcile(context, CancellationToken.None);
+        var result = await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Be(errorMessage);
@@ -344,7 +344,7 @@ public sealed class ReconcilerTest
         var controller = CreateMockController(reconcileResult: failureResult);
         var reconciler = CreateReconcilerForController(controller);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockQueue.Verify(
             q => q.Enqueue(
@@ -383,12 +383,43 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForController(mockController.Object);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockClient.Verify(
             c => c.UpdateAsync(It.Is<V1ConfigMap>(cm => cm.HasFinalizer("ientityfinalizer`1proxyfinalizer")),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task Reconcile_When_Auto_Attach_Finalizers_Is_Enabled_But_No_Finalizer_Is_Defined_Should_Not_Update()
+    {
+        _settings.AutoAttachFinalizers = true;
+
+        var entity = CreateTestEntity();
+        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Modified);
+        var mockController = new Mock<IEntityController<V1ConfigMap>>();
+
+        _mockServiceProvider
+            .Setup(p => p.GetRequiredKeyedService(
+                It.Is<Type>(t => t == typeof(IEnumerable<IEntityFinalizer<V1ConfigMap>>)),
+                It.Is<object?>(o => ReferenceEquals(o, KeyedService.AnyKey))))
+            .Returns(() => new List<IEntityFinalizer<V1ConfigMap>>());
+
+        mockController
+            .Setup(c => c.ReconcileAsync(It.IsAny<V1ConfigMap>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => ReconciliationResult<V1ConfigMap>.Success(entity));
+
+        var reconciler = CreateReconcilerForController(mockController.Object);
+
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
+
+        _mockClient.Verify(
+            c =>
+                c.UpdateAsync(
+                    It.IsAny<V1ConfigMap>(),
+                    It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -414,7 +445,7 @@ public sealed class ReconcilerTest
 
         var reconciler = CreateReconcilerForFinalizer(mockFinalizer.Object, finalizerName);
 
-        await reconciler.Reconcile(context, CancellationToken.None);
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
 
         _mockClient.Verify(
             c => c.UpdateAsync(It.Is<V1ConfigMap>(cm => !cm.HasFinalizer(finalizerName)),
