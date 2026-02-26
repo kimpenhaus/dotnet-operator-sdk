@@ -10,18 +10,20 @@ using k8s.Models;
 
 using KubeOps.Abstractions.Builder;
 using KubeOps.Abstractions.Entities;
-using KubeOps.Abstractions.Reconciliation;
 using KubeOps.KubernetesClient;
 using KubeOps.Operator.Queue;
 
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+using ZiggyCreatures.Caching.Fusion;
+
 namespace KubeOps.Operator.Watcher;
 
 internal sealed class LeaderAwareResourceWatcher<TEntity>(
     ActivitySource activitySource,
     ILogger<LeaderAwareResourceWatcher<TEntity>> logger,
+    IFusionCacheProvider cacheProvider,
     ITimedEntityQueue<TEntity> entityQueue,
     OperatorSettings settings,
     IEntityLabelSelector<TEntity> labelSelector,
@@ -31,6 +33,7 @@ internal sealed class LeaderAwareResourceWatcher<TEntity>(
     : ResourceWatcher<TEntity>(
         activitySource,
         logger,
+        cacheProvider,
         entityQueue,
         settings,
         labelSelector,

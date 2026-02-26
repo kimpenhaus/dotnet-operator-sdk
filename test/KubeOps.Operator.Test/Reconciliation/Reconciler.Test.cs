@@ -26,7 +26,6 @@ namespace KubeOps.Operator.Test.Reconciliation;
 public sealed class ReconcilerTest
 {
     private readonly Mock<ILogger<Reconciler<V1ConfigMap>>> _mockLogger;
-    private readonly Mock<IFusionCacheProvider> _mockCacheProvider;
     private readonly Mock<IFusionCache> _mockCache;
     private readonly Mock<IKeyedServiceProvider> _mockServiceProvider;
     private readonly Mock<IKubernetesClient> _mockClient;
@@ -36,16 +35,11 @@ public sealed class ReconcilerTest
     public ReconcilerTest()
     {
         _mockLogger = new();
-        _mockCacheProvider = new();
         _mockCache = new();
         _mockServiceProvider = new();
         _mockClient = new();
         _mockQueue = new();
         _settings = new() { AutoAttachFinalizers = false, AutoDetachFinalizers = false };
-
-        _mockCacheProvider
-            .Setup(p => p.GetCache(It.IsAny<string>()))
-            .Returns(_mockCache.Object);
     }
 
     [Fact]
@@ -362,7 +356,7 @@ public sealed class ReconcilerTest
         _settings.AutoAttachFinalizers = true;
 
         var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Modified);
+        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Modified, ReconciliationTriggerSource.ApiServer);
         var mockController = new Mock<IEntityController<V1ConfigMap>>();
 
         _mockServiceProvider
@@ -441,7 +435,6 @@ public sealed class ReconcilerTest
 
         return new(
             _mockLogger.Object,
-            _mockCacheProvider.Object,
             _mockServiceProvider.Object,
             _settings,
             _mockQueue.Object,
@@ -473,7 +466,6 @@ public sealed class ReconcilerTest
 
         return new(
             _mockLogger.Object,
-            _mockCacheProvider.Object,
             _mockServiceProvider.Object,
             _settings,
             _mockQueue.Object,

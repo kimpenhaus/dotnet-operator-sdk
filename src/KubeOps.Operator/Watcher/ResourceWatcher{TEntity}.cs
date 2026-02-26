@@ -14,6 +14,7 @@ using KubeOps.Abstractions.Builder;
 using KubeOps.Abstractions.Entities;
 using KubeOps.Abstractions.Reconciliation;
 using KubeOps.KubernetesClient;
+using KubeOps.Operator.Constants;
 using KubeOps.Operator.Logging;
 using KubeOps.Operator.Queue;
 using KubeOps.Operator.Reconciliation;
@@ -21,11 +22,14 @@ using KubeOps.Operator.Reconciliation;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+using ZiggyCreatures.Caching.Fusion;
+
 namespace KubeOps.Operator.Watcher;
 
 public class ResourceWatcher<TEntity>(
     ActivitySource activitySource,
     ILogger<ResourceWatcher<TEntity>> logger,
+    IFusionCacheProvider cacheProvider,
     ITimedEntityQueue<TEntity> entityQueue,
     OperatorSettings settings,
     IEntityLabelSelector<TEntity> labelSelector,
@@ -33,6 +37,7 @@ public class ResourceWatcher<TEntity>(
     : IHostedService, IAsyncDisposable, IDisposable
     where TEntity : IKubernetesObject<V1ObjectMeta>
 {
+    private readonly IFusionCache _entityCache = cacheProvider.GetCache(CacheConstants.CacheNames.ResourceWatcher);
     private CancellationTokenSource _cancellationTokenSource = new();
     private uint _watcherReconnectRetries;
     private Task? _eventWatcher;
@@ -128,13 +133,47 @@ public class ResourceWatcher<TEntity>(
     }
 
     protected virtual async Task OnEventAsync(WatchEventType eventType, TEntity entity, CancellationToken cancellationToken)
-        => await entityQueue
+    {
+        if (eventType == WatchEventType.Deleted)
+        {
+            await _entityCache.RemoveAsync(
+                entity.Uid(),
+                token: cancellationToken);
+        }
+        else
+        {
+            var cachedGeneration = await _entityCache.TryGetAsync<long?>(
+                    entity.Uid(),
+                    token: cancellationToken);
+
+            // check if entity-spec has changed through "Generation" value increment.
+            // skip reconcile if not changed.
+            if (cachedGeneration.HasValue && cachedGeneration >= entity.Generation())
+            {
+                logger.LogDebug(
+                    """Entity "{Kind}/{Name}" modification did not modify generation. Skip event.""",
+                    entity.Kind,
+                    entity.Name());
+
+                return;
+            }
+        }
+
+        // update cached generation since generation now changed
+        await _entityCache.SetAsync(
+            entity.Uid(),
+            entity.Generation() ?? 1,
+            token: cancellationToken);
+
+        // queue entity for reconciliation
+        await entityQueue
             .Enqueue(
                 entity,
                 eventType.ToReconciliationType(),
                 ReconciliationTriggerSource.ApiServer,
                 TimeSpan.Zero,
                 cancellationToken);
+    }
 
     private async Task WatchClientEventsAsync(CancellationToken stoppingToken)
     {

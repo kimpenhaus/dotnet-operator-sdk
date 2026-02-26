@@ -71,29 +71,30 @@ public sealed class TimedEntityQueue<TEntity> : ITimedEntityQueue<TEntity>
     {
         var key = this.GetKey(entity) ?? throw new InvalidOperationException("Cannot enqueue entities without name.");
 
-        _management.AddOrUpdate(
-            key,
-            _ =>
-            {
-                _logger.LogTrace(
-                    """Adding schedule for entity "{Kind}/{Name}" to reconcile in {Seconds}s.""",
-                    entity.Kind,
-                    entity.Name(),
-                    queueIn.TotalSeconds);
+        _management
+            .AddOrUpdate(
+                key,
+                _ =>
+                {
+                    _logger.LogTrace(
+                        """Adding schedule for entity "{Kind}/{Name}" to reconcile in {Seconds}s.""",
+                        entity.Kind,
+                        entity.Name(),
+                        queueIn.TotalSeconds);
 
-                return new(entity, type, reconciliationTriggerSource, queueIn);
-            },
-            (_, oldEntry) =>
-            {
-                _logger.LogTrace(
-                    """Updating schedule for entity "{Kind}/{Name}" to reconcile in {Seconds}s.""",
-                    entity.Kind,
-                    entity.Name(),
-                    queueIn.TotalSeconds);
+                    return new(entity, type, reconciliationTriggerSource, queueIn);
+                },
+                (_, oldEntry) =>
+                {
+                    _logger.LogTrace(
+                        """Updating schedule for entity "{Kind}/{Name}" to reconcile in {Seconds}s.""",
+                        entity.Kind,
+                        entity.Name(),
+                        queueIn.TotalSeconds);
 
-                oldEntry.Cancel();
-                return new(entity, type, reconciliationTriggerSource, queueIn);
-            });
+                    oldEntry.Cancel();
+                    return new(entity, type, reconciliationTriggerSource, queueIn);
+                });
 
         return Task.CompletedTask;
     }

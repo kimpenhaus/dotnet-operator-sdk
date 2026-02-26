@@ -10,13 +10,10 @@ using KubeOps.Abstractions.Reconciliation;
 using KubeOps.Abstractions.Reconciliation.Controller;
 using KubeOps.Abstractions.Reconciliation.Finalizer;
 using KubeOps.KubernetesClient;
-using KubeOps.Operator.Constants;
 using KubeOps.Operator.Queue;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-
-using ZiggyCreatures.Caching.Fusion;
 
 namespace KubeOps.Operator.Reconciliation;
 
@@ -36,7 +33,6 @@ namespace KubeOps.Operator.Reconciliation;
 /// </remarks>
 internal sealed class Reconciler<TEntity>(
     ILogger<Reconciler<TEntity>> logger,
-    IFusionCacheProvider cacheProvider,
     IServiceProvider serviceProvider,
     OperatorSettings operatorSettings,
     ITimedEntityQueue<TEntity> entityQueue,
@@ -44,14 +40,19 @@ internal sealed class Reconciler<TEntity>(
     : IReconciler<TEntity>
     where TEntity : IKubernetesObject<V1ObjectMeta>
 {
-    private readonly IFusionCache _entityCache = cacheProvider.GetCache(CacheConstants.CacheNames.ResourceWatcher);
-
     public async Task<ReconciliationResult<TEntity>> Reconcile(ReconciliationContext<TEntity> reconciliationContext, CancellationToken cancellationToken)
     {
         var result = reconciliationContext.EventType switch
         {
             ReconciliationType.Added or ReconciliationType.Modified =>
-                await ReconcileModification(reconciliationContext, cancellationToken),
+                reconciliationContext.Entity switch
+                {
+                    { Metadata.DeletionTimestamp: null }
+                        => await ReconcileEntity(reconciliationContext.Entity, cancellationToken),
+                    { Metadata: { DeletionTimestamp: not null, Finalizers.Count: > 0 } }
+                        => await ReconcileFinalizersSequential(reconciliationContext.Entity, cancellationToken),
+                    _ => ReconciliationResult<TEntity>.Success(reconciliationContext.Entity),
+                },
             ReconciliationType.Deleted =>
                 await ReconcileDeletion(reconciliationContext, cancellationToken),
             _ => throw new NotSupportedException($"Reconciliation event type {reconciliationContext.EventType} is not supported!"),
@@ -71,43 +72,6 @@ internal sealed class Reconciler<TEntity>(
         return result;
     }
 
-    private async Task<ReconciliationResult<TEntity>> ReconcileModification(ReconciliationContext<TEntity> reconciliationContext, CancellationToken cancellationToken)
-    {
-        switch (reconciliationContext.Entity)
-        {
-            case { Metadata.DeletionTimestamp: null }:
-                if (reconciliationContext.IsTriggeredByApiServer())
-                {
-                    var cachedGeneration = await _entityCache.TryGetAsync<long?>(
-                        reconciliationContext.Entity.Uid(),
-                        token: cancellationToken);
-
-                    // Check if entity-spec has changed through "Generation" value increment. Skip reconcile if not changed.
-                    if (cachedGeneration.HasValue && cachedGeneration >= reconciliationContext.Entity.Generation())
-                    {
-                        logger.LogDebug(
-                            """Entity "{Kind}/{Name}" modification did not modify generation. Skip event.""",
-                            reconciliationContext.Entity.Kind,
-                            reconciliationContext.Entity.Name());
-
-                        return ReconciliationResult<TEntity>.Success(reconciliationContext.Entity);
-                    }
-
-                    // update cached generation since generation now changed
-                    await _entityCache.SetAsync(
-                        reconciliationContext.Entity.Uid(),
-                        reconciliationContext.Entity.Generation() ?? 1,
-                        token: cancellationToken);
-                }
-
-                return await ReconcileEntity(reconciliationContext.Entity, cancellationToken);
-            case { Metadata: { DeletionTimestamp: not null, Finalizers.Count: > 0 } }:
-                return await ReconcileFinalizersSequential(reconciliationContext.Entity, cancellationToken);
-            default:
-                return ReconciliationResult<TEntity>.Success(reconciliationContext.Entity);
-        }
-    }
-
     private async Task<ReconciliationResult<TEntity>> ReconcileDeletion(ReconciliationContext<TEntity> reconciliationContext, CancellationToken cancellationToken)
     {
         await entityQueue
@@ -117,14 +81,7 @@ internal sealed class Reconciler<TEntity>(
 
         await using var scope = serviceProvider.CreateAsyncScope();
         var controller = scope.ServiceProvider.GetRequiredService<IEntityController<TEntity>>();
-        var result = await controller.DeletedAsync(reconciliationContext.Entity, cancellationToken);
-
-        if (result.IsSuccess)
-        {
-            await _entityCache.RemoveAsync(reconciliationContext.Entity.Uid(), token: cancellationToken);
-        }
-
-        return result;
+        return await controller.DeletedAsync(reconciliationContext.Entity, cancellationToken);
     }
 
     private async Task<ReconciliationResult<TEntity>> ReconcileEntity(TEntity entity, CancellationToken cancellationToken)
