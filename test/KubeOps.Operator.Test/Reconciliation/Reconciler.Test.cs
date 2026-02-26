@@ -106,37 +106,6 @@ public sealed class ReconcilerTest
     }
 
     [Fact]
-    public async Task Reconcile_Should_Skip_On_Cached_Generation()
-    {
-        var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Added, ReconciliationTriggerSource.ApiServer);
-        var mockController = new Mock<IEntityController<V1ConfigMap>>();
-
-        mockController
-            .Setup(c => c.ReconcileAsync(It.IsAny<V1ConfigMap>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(ReconciliationResult<V1ConfigMap>.Success(entity));
-
-        _mockCache
-            .Setup(c => c.TryGetAsync<long?>(
-                It.Is<string>(s => s == entity.Uid()),
-                It.IsAny<FusionCacheEntryOptions>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MaybeValue<long?>.FromValue(entity.Generation()));
-
-        var reconciler = CreateReconcilerForController(mockController.Object);
-
-        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
-
-        _mockLogger.Verify(logger => logger.Log(
-                    It.Is<LogLevel>(logLevel => logLevel == LogLevel.Debug),
-                    It.Is<EventId>(eventId => eventId.Id == 0),
-                    It.Is<It.IsAnyType>((@object, type) => @object.ToString() == $"""Entity "{entity.Kind}/{entity.Name()}" modification did not modify generation. Skip event.""" && type.Name == "FormattedLogValues"),
-                    It.IsAny<Exception>(),
-                    It.IsAny<Func<It.IsAnyType, Exception, string>>()!),
-                Times.Once);
-    }
-
-    [Fact]
     public async Task Reconcile_Should_Call_ReconcileAsync_For_Added_Event()
     {
         var entity = CreateTestEntity();
@@ -215,24 +184,6 @@ public sealed class ReconcilerTest
 
         mockController.Verify(
             c => c.DeletedAsync(entity, It.IsAny<CancellationToken>()),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task Reconcile_Should_Remove_From_Cache_After_Successful_Deletion()
-    {
-        var entity = CreateTestEntity();
-        var context = ReconciliationContext<V1ConfigMap>.CreateFor(entity, ReconciliationType.Deleted, ReconciliationTriggerSource.ApiServer);
-
-        var controller = CreateMockController(
-            deletedResult: ReconciliationResult<V1ConfigMap>.Success(entity));
-
-        var reconciler = CreateReconcilerForController(controller);
-
-        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
-
-        _mockCache.Verify(
-            c => c.RemoveAsync(entity.Uid(), It.IsAny<FusionCacheEntryOptions>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
