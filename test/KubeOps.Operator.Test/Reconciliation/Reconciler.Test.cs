@@ -357,6 +357,37 @@ public sealed class ReconcilerTest
     }
 
     [Fact]
+    public async Task Reconcile_When_Auto_Attach_Finalizers_Is_Enabled_But_No_Finalizer_Is_Defined_Should_Not_Update()
+    {
+        _settings.AutoAttachFinalizers = true;
+
+        var entity = CreateTestEntity();
+        var context = ReconciliationContext<V1ConfigMap>.CreateFromApiServerEvent(entity, WatchEventType.Modified);
+        var mockController = new Mock<IEntityController<V1ConfigMap>>();
+
+        _mockServiceProvider
+            .Setup(p => p.GetRequiredKeyedService(
+                It.Is<Type>(t => t == typeof(IEnumerable<IEntityFinalizer<V1ConfigMap>>)),
+                It.Is<object?>(o => ReferenceEquals(o, KeyedService.AnyKey))))
+            .Returns(() => new List<IEntityFinalizer<V1ConfigMap>>());
+
+        mockController
+            .Setup(c => c.ReconcileAsync(It.IsAny<V1ConfigMap>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => ReconciliationResult<V1ConfigMap>.Success(entity));
+
+        var reconciler = CreateReconcilerForController(mockController.Object);
+
+        await reconciler.Reconcile(context, TestContext.Current.CancellationToken);
+
+        _mockClient.Verify(
+            c =>
+                c.UpdateAsync(
+                    It.IsAny<V1ConfigMap>(),
+                    It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task Reconcile_When_Auto_Detach_Finalizers_Is_Enabled_Should_Detach_Finalizer()
     {
         _settings.AutoDetachFinalizers = true;
