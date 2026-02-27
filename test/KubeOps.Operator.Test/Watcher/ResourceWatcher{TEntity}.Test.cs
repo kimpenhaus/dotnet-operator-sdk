@@ -56,27 +56,39 @@ public sealed class ResourceWatcherTest
     [Fact]
     public async Task OnEvent_Should_Remove_From_Cache_On_Deleted_Event()
     {
+        // Arrange
         var entity = CreateTestEntity();
         var mockCache = new Mock<IFusionCache>();
         var mockQueue = new Mock<ITimedEntityQueue<V1OperatorIntegrationTestEntity>>();
         var watcher = CreateTestableWatcher(cache: mockCache.Object, queue:mockQueue.Object);
 
+        // Act
         await watcher.InvokeOnEventAsync(
             WatchEventType.Deleted,
             entity,
             TestContext.Current.CancellationToken);
 
+        // Assert
         mockCache.Verify(
             c => c.RemoveAsync(
-                entity.Uid(),
+                It.Is<string>( uuid => uuid == entity.Uid()),
                 It.IsAny<FusionCacheEntryOptions>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+        mockCache.Verify(
+            c => c.SetAsync(
+                It.Is<string>( uuid => uuid == entity.Uid()),
+                It.IsAny<long>(),
+                It.IsAny<FusionCacheEntryOptions>(),
+                It.IsAny<IEnumerable<string>?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
     public async Task OnEvent_Should_Enqueue_When_Generation_Changed()
     {
+        // Arrange
         var entity = CreateTestEntity();
         var mockCache = new Mock<IFusionCache>();
         var mockQueue = new Mock<ITimedEntityQueue<V1OperatorIntegrationTestEntity>>();
@@ -90,8 +102,14 @@ public sealed class ResourceWatcherTest
                     It.IsAny<CancellationToken>()))
             .ReturnsAsync(MaybeValue<long?>.FromValue(entity.Generation() - 1));
 
-        await watcher.InvokeOnEventAsync(WatchEventType.Modified, entity, TestContext.Current.CancellationToken);
+        // Act
+        await watcher
+            .InvokeOnEventAsync(
+                WatchEventType.Modified,
+                entity,
+                TestContext.Current.CancellationToken);
 
+        // Assert
         mockQueue.Verify(
             q => q.Enqueue(
                     entity,
@@ -100,11 +118,20 @@ public sealed class ResourceWatcherTest
                     TimeSpan.Zero,
                     It.IsAny<CancellationToken>()),
             Times.Once);
+        mockCache.Verify(
+            c => c.SetAsync(
+                It.Is<string>( uuid => uuid == entity.Uid()),
+                It.Is<long>(generation => generation == entity.Generation()),
+                It.IsAny<FusionCacheEntryOptions>(),
+                It.IsAny<IEnumerable<string>?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
     public async Task OnEvent_Should_Skip_Enqueue_When_Generation_Not_Changed()
     {
+        // Arrange
         var entity = CreateTestEntity();
         var mockCache = new Mock<IFusionCache>();
         var mockQueue = new Mock<ITimedEntityQueue<V1OperatorIntegrationTestEntity>>();
@@ -118,14 +145,28 @@ public sealed class ResourceWatcherTest
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(MaybeValue<long?>.FromValue(entity.Generation()));
 
-        await watcher.InvokeOnEventAsync(WatchEventType.Added, entity, TestContext.Current.CancellationToken);
+        // Act
+        await watcher
+            .InvokeOnEventAsync(
+                WatchEventType.Added,
+                entity,
+                TestContext.Current.CancellationToken);
 
+        // Assert
         mockQueue.Verify(
             q => q.Enqueue(
                 It.IsAny<V1OperatorIntegrationTestEntity>(),
                 It.IsAny<ReconciliationType>(),
                 It.IsAny<ReconciliationTriggerSource>(),
                 It.IsAny<TimeSpan>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        mockCache.Verify(
+            c => c.SetAsync(
+                It.Is<string>( uuid => uuid == entity.Uid()),
+                It.IsAny<long>(),
+                It.IsAny<FusionCacheEntryOptions>(),
+                It.IsAny<IEnumerable<string>?>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
 

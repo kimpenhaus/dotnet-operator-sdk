@@ -134,17 +134,11 @@ public class ResourceWatcher<TEntity>(
 
     protected virtual async Task OnEventAsync(WatchEventType eventType, TEntity entity, CancellationToken cancellationToken)
     {
-        if (eventType == WatchEventType.Deleted)
-        {
-            await _entityCache.RemoveAsync(
-                entity.Uid(),
-                token: cancellationToken);
-        }
-        else
+        if (eventType != WatchEventType.Deleted)
         {
             var cachedGeneration = await _entityCache.TryGetAsync<long?>(
-                    entity.Uid(),
-                    token: cancellationToken);
+                entity.Uid(),
+                token: cancellationToken);
 
             // check if entity-spec has changed through "Generation" value increment.
             // skip reconcile if not changed.
@@ -157,13 +151,19 @@ public class ResourceWatcher<TEntity>(
 
                 return;
             }
-        }
 
-        // update cached generation since generation now changed
-        await _entityCache.SetAsync(
-            entity.Uid(),
-            entity.Generation() ?? 1,
-            token: cancellationToken);
+            // update cached generation since generation now changed
+            await _entityCache.SetAsync(
+                entity.Uid(),
+                entity.Generation() ?? 1,
+                token: cancellationToken);
+        }
+        else
+        {
+            await _entityCache.RemoveAsync(
+                entity.Uid(),
+                token: cancellationToken);
+        }
 
         // queue entity for reconciliation
         await entityQueue
